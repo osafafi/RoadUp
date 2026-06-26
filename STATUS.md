@@ -101,6 +101,12 @@ python examples/generate_xodr_samples.py
 #   showcase.xodr  + one file per sample road
 #   covers line / arc / spiral / paramPoly3, 6 lane types, white+yellow + double marks, a width taper
 
+# Mesh the showcase into .obj for visual topology inspection in Blender (-> examples/out/):
+python examples/generate_obj_meshes.py
+#   showcase.obj + per-road; each road = <road>_Surface + one <road>_Lane_<id> object (meters, Z-up).
+#   Validation harness over the built Sampler + MeshBuilder; the real 3D layer is roadup/usd (Phase 5).
+#   tests/integration/test_mesh_export.py is the programmatic mesh-correctness gate.
+
 pytest tests/integration/test_xodr_write.py -s       # prints a generated .xodr to stdout
 pytest tests/integration/test_xodr_roundtrip.py -s   # write -> read -> compare topology + userData
 ruff check roadup/common roadup/geometry roadup/opendrive roadup/segments roadup/markings roadup/network  # clean
