@@ -36,3 +36,6 @@ Thumbs.db
 *.usd
 *.usdc
 !tests/fixtures/**/*.usda
+
+# Generated example .xodr output (run examples/generate_xodr_samples.py)
+examples/out/

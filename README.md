@@ -7,8 +7,10 @@ viewport.
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) — responsibilities, boundaries, data flow, decisions.
 - **Interfaces / code sketches:** [CODE_REFERENCE.md](CODE_REFERENCE.md) — class/function signatures per module.
 
-> **Status:** scaffolding. Every module is a typed stub raising `NotImplementedError`; unit tests are
-> placeholders skipped pending the step-by-step build session.
+> **Stage: 1 / 7 — Foundation + first `.xodr` ✅** · see **[STATUS.md](STATUS.md)** for the exact,
+> per-module build state. The pure-Python core (`common`, `geometry`, `opendrive/model`) and the
+> `scenariogeneration` writer are implemented: you can author a road in code and write a valid
+> OpenDRIVE 1.7 `.xodr`. Phases 2–7 (reader, authoring, intersections, USD, Kit app) are still stubs.
 
 ## Layout
 

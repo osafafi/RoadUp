@@ -1,8 +1,9 @@
-"""Road, lane, width-law and road-mark dataclasses (the source-of-truth model). CODE_REFERENCE.md S3."""
+"""Road/lane/width/road-mark dataclasses (the source-of-truth model). CODE_REFERENCE.md S3."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from roadup.common.errors import ValidationError
 from roadup.common.types import GeometryType, LaneType
 
 
@@ -67,11 +68,22 @@ class LaneSection:
     center: Lane | None = None
     right: list[Lane] = field(default_factory=list)
 
+    def _all_lanes(self) -> list[Lane]:
+        lanes = list(self.left)
+        if self.center is not None:
+            lanes.append(self.center)
+        lanes.extend(self.right)
+        return lanes
+
     def lane(self, lane_id: int) -> Lane:
-        raise NotImplementedError
+        for ln in self._all_lanes():
+            if ln.id == lane_id:
+                return ln
+        raise ValidationError(f"no lane with id {lane_id} in section at s={self.s}")
 
     def lane_ids(self) -> list[int]:
-        raise NotImplementedError
+        """All lane ids, ordered left (most positive) → center (0) → right (most negative)."""
+        return sorted((ln.id for ln in self._all_lanes()), reverse=True)
 
 
 @dataclass
@@ -92,4 +104,15 @@ class Road:
     user_data: dict = field(default_factory=dict)
 
     def lane_section_at(self, s: float) -> LaneSection:
-        raise NotImplementedError
+        """The lane section governing station ``s`` (the last one starting at or before ``s``)."""
+        if not self.lane_sections:
+            raise ValidationError(f"road {self.id} has no lane sections")
+        chosen: LaneSection | None = None
+        for section in sorted(self.lane_sections, key=lambda ls: ls.s):
+            if section.s <= s + 1e-9:
+                chosen = section
+            else:
+                break
+        if chosen is None:
+            raise ValidationError(f"no lane section at or before s={s} on road {self.id}")
+        return chosen

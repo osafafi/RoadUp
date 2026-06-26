@@ -11,17 +11,17 @@ if TYPE_CHECKING:
 class LibOpenDriveReader:
     """.xodr -> model using libOpenDRIVE bindings. Owns all libOpenDRIVE imports."""
 
-    def parse(self, xodr_path: str) -> "OpenDriveModel":
+    def parse(self, xodr_path: str) -> OpenDriveModel:
         raise NotImplementedError
 
 
 class LxmlFallbackReader:
     """Pure-Python, topology-only reader (no native dependency) - used in CI/tests."""
 
-    def parse(self, xodr_path: str) -> "OpenDriveModel":
+    def parse(self, xodr_path: str) -> OpenDriveModel:
         raise NotImplementedError
 
 
-def default_reader() -> "ReaderBackend":
+def default_reader() -> ReaderBackend:
     """Return :class:`LibOpenDriveReader` if importable, else :class:`LxmlFallbackReader`."""
     raise NotImplementedError

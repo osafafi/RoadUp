@@ -78,5 +78,8 @@ If a server's tools aren't loaded, fetch via ToolSearch (e.g. `select:mcp__usd-m
   APIs.** Prefer a server lookup over a guess.
 - When you produce USD, show the resulting `.usda` so composition is auditable.
 - Keep ARCHITECTURE.md / CODE_REFERENCE.md authoritative and in sync with structural changes.
+- **[STATUS.md](STATUS.md) is the canonical "where are we" file** — the build stage + per-module
+  status. Read it first to pick up where the last session left off, and update it in the *same*
+  change as any build progress (definition-of-done, same rule as the docs above).
 - Don't re-read the whole codebase each session — the module map above + ARCHITECTURE.md are the
   index. Build step by step; the stubs raise `NotImplementedError` until their phase.
