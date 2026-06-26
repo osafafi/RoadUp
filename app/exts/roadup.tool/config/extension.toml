@@ -1,0 +1,19 @@
+[package]
+title = "RoadUp Tool"
+version = "0.1.0"
+description = "Procedural OpenDRIVE road authoring in the Omniverse viewport."
+authors = ["RoadUp"]
+category = "simulation"
+keywords = ["road", "opendrive", "procedural", "xodr"]
+
+# The RoadUp core library (the `roadup` package) must be importable in the Kit Python
+# environment (e.g. pip-installed into the Kit interpreter, or added to PYTHONPATH).
+
+[dependencies]
+"omni.ui" = {}
+"omni.usd" = {}
+"omni.kit.viewport.utility" = {}
+"omni.ui.scene" = {}
+
+[[python.module]]
+name = "roadup_tool"

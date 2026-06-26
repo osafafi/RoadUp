@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "kit-dev-mcp": {
+      "type": "http",
+      "url": "http://localhost:9902/mcp"
+    },
+    "usd-mcp": {
+      "type": "http",
+      "url": "http://localhost:9903/mcp"
+    },
+    "ui-kit-mcp": {
+      "type": "http",
+      "url": "http://localhost:9901/mcp"
+    },
+    "blender-mcp": {
+      "type": "stdio",
+      "command": "C:\\Users\\omars\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+      "args": ["-m", "blender_mcp.server"]
+    }
+  }
+}

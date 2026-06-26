@@ -1,0 +1,11 @@
+{
+  "enableAllProjectMcpServers": true,
+  "permissions": {
+    "allow": [
+      "mcp__usd-mcp__*",
+      "mcp__kit-dev-mcp__*",
+      "mcp__ui-kit-mcp__*",
+      "mcp__blender-mcp__*"
+    ]
+  }
+}

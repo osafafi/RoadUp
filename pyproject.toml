@@ -1,0 +1,70 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "roadup"
+version = "0.1.0"
+description = "Pure-Python, OpenDRIVE-native procedural road authoring for Omniverse."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Proprietary" }
+
+# Required core dependencies (all pip-installable, no native build).
+dependencies = [
+    "numpy>=1.24",
+    "lxml>=4.9",
+    "scenariogeneration>=0.14",  # OpenDRIVE (.xodr) writing
+]
+
+[project.optional-dependencies]
+# OpenDRIVE reading / geometry evaluation backend (native). A pure-Python topology fallback
+# exists in roadup.opendrive.io.reader, so this is optional and CI does not need it.
+# Pin the concrete distribution during the build session.
+read = [
+    # Candidates: a libOpenDRIVE pybind wheel, "esmini", or pure-Python "pyxodr".
+]
+# USD viewport output. Inside Omniverse, Kit provides USD; standalone use needs usd-core.
+usd = [
+    "usd-core>=23.11",
+]
+# Optional accelerators for spatial/2D ops.
+accel = [
+    "scipy>=1.10",
+    "shapely>=2.0",
+]
+# Headless Blender mesh ops are run out-of-process against a system Blender, so `bpy` is not
+# pinned here. If an in-process bpy is ever wanted, add a version-locked "bpy" to this extra.
+blender = [
+]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "mypy>=1.8",
+    "ruff>=0.3",
+]
+
+[tool.hatch.build.targets.wheel]
+# Only the core library ships as a wheel. The Omniverse extension under app/ is loaded by Kit
+# from its own extension path, not pip-installed.
+packages = ["roadup"]
+
+[tool.pytest.ini_options]
+# importlib mode + pythonpath let co-located tests with duplicate filenames coexist without
+# __init__.py in test folders, and find the `roadup` package without an editable install.
+addopts = "--import-mode=importlib"
+pythonpath = ["."]
+testpaths = ["roadup", "tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true   # native/optional backends (libOpenDRIVE, pxr, omni, bpy)
+check_untyped_defs = true
