@@ -4,7 +4,9 @@ Cited, verified figures that back RoadUp presets. **Empty on purpose** — appen
 is confirmed against an official source the author has approved. Never invent figures; never paste
 unverified web numbers. Keep test/placeholder values out of this file.
 
-**Governing standard:** _TBD — confirm with the author (see `SKILL.md`)._
+**Governing standard:** **UAE / GCC** (target). Authorities to cite: Dubai RTA · Abu Dhabi (DMT/ITC) ·
+UAE MOEI · GCC specs. Provisional working values currently live in `presets/*.yaml`; this datasheet
+tracks the **cited** figures (with sources) that supersede them.
 
 ## Geometry
 

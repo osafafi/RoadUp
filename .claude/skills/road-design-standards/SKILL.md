@@ -5,16 +5,21 @@ description: Source real-world road geometric-design figures to back RoadUp pres
 
 # Road Design Standards (reference)
 
-RoadUp's presets (`segments/presets.py`, `markings/presets.py`, fillet radii, grades) are **presets
-for now** — illustrative numbers. This skill is the discipline for turning them into *cited* values,
-plus a growing datasheet. It starts empty on purpose.
+RoadUp's preset **values** live in editable `presets/*.yaml` (road-type lane layouts, widths, marking
+dimensions, fillet radii, design speeds) — seeded with **provisional** UAE/GCC numbers. This skill is
+the discipline for turning them into *cited* values, plus a growing datasheet (`cheatsheet.md`) that
+starts empty on purpose.
 
-## Confirm the jurisdiction first
+## Jurisdiction: UAE / GCC
 
-There is no single global road standard. Before sourcing a figure, **confirm with the author which
-standard governs** — e.g. AASHTO *Green Book* (US), a national/agency geometric-design manual, or a
-specific country/city authority. Don't assume one. Different standards give different lane widths,
-radii, and marking dimensions; mixing them silently is a bug.
+RoadUp targets **UAE and Gulf** roads. Validate figures against the relevant authorities — the
+**Dubai RTA**, **Abu Dhabi** (DMT/ITC), the UAE **Ministry of Energy & Infrastructure (MOEI)**, and
+**GCC** standard specifications where an emirate manual defers to them. Emirates can differ (Dubai vs
+Abu Dhabi) — record which one a figure comes from. Don't mix standards silently.
+
+The seeded values in `presets/road_types.yaml` and `presets/markings.yaml` are **provisional** UAE/GCC
+placeholders the author will validate; replace them with cited figures and log the citation in
+`cheatsheet.md`.
 
 ## How to use this skill
 

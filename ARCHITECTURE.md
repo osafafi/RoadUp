@@ -1,6 +1,6 @@
 # RoadUp — Architecture Document
 
-**Version:** 2.0.0
+**Version:** 2.1.0
 **Date:** 2026-06-26
 **Status:** Foundation / Ready for Scaffolding
 **Owner:** Architecture-first build team
@@ -146,8 +146,8 @@ Detailed interfaces are in [CODE_REFERENCE.md](CODE_REFERENCE.md) under the matc
 | `opendrive/io/` | `.xodr` read (libOpenDRIVE adapter) and write (scenariogeneration adapter); `<userData>` round-trip. | scenariogeneration, libOpenDRIVE, lxml | Adapter-isolated |
 | `opendrive/eval/` | Sample the model into ref-line frames and lane boundary polylines for meshing. | libOpenDRIVE | Adapter-isolated |
 | `network/` | Topology graph, spatial index, snapping queries, and **road↔lane link resolution**. | numpy | Yes |
-| `segments/` | Author a road: lane count, lane types, **lane width laws along length**, road-type presets. | — | Yes |
-| `markings/` | Road-mark model + **presets** (continuous / dashed / double, dimensions, material params). | — | Yes |
+| `segments/` | Author a road: lane count, lane types, **lane width laws along length**, road-type presets (loaded from external `presets/road_types.yaml`). | pyyaml | Yes |
+| `markings/` | Road-mark model + **presets** (continuous / dashed / double, dimensions, material params) loaded from external `presets/markings.yaml`. | pyyaml | Yes |
 | `intersections/` | Junction authoring, **editable connection splines**, lane connectivity, surface generation. | numpy | Yes |
 | `usd/` | Generate/update the USD viewport stage; map prims ↔ OpenDRIVE ids; build materials from presets. | pxr (USD) | Adapter-isolated |
 | `tooling/` | Headless interaction: tool modes, hover/selection state, manipulator model, preview, command/undo. | — | Yes |
@@ -232,9 +232,13 @@ editable law (constant, linear taper, or control-point curve) and bakes it to `<
 - **Dimensions** — line width, and for dashes the dash length and gap; double-line separation.
 - **Material parameters** — color and a surface/material preset id consumed by the USD layer.
 
-Presets live in a registry (`markings/presets`). Authoring assigns a preset id to a lane edge; the
-OpenDRIVE `<roadMark>` carries the geometric/semantic part and the material preset id rides in
-`<userData>`. See the preset tables in [CODE_REFERENCE.md §8](CODE_REFERENCE.md).
+**Externalized presets.** Road-type and marking preset *values* are **not hardcoded** — they live in
+editable YAML under `presets/` (`road_types.yaml`, `markings.yaml`). The registries (`segments/presets`,
+`markings/presets`) define only the schema and load these files via `common.config.resolve_presets_dir`
+(overridable by `Config.presets_dir` or `$ROADUP_PRESETS_DIR`). Authoring assigns a marking-preset id to
+a lane edge; the OpenDRIVE `<roadMark>` carries the geometric/semantic part and the material preset id
+rides in `<userData>`. Initial values target **UAE/GCC** and are **provisional** pending validation (see
+the `road-design-standards` skill). See [CODE_REFERENCE.md §7–§8](CODE_REFERENCE.md).
 
 ---
 
@@ -448,9 +452,12 @@ roadup/
   common/        geometry/      opendrive/{model,io,eval}/   network/
   segments/      markings/      intersections/               usd/
   tooling/       blender/       app/exts/roadup.tool/
+presets/         road_types.yaml   markings.yaml          # external, editable preset VALUES
 tests/
   integration/   fixtures/
 ARCHITECTURE.md  CODE_REFERENCE.md  pyproject.toml  README.md
+.claude/         skills/   settings.json                  # MCP-grounded skills + permissions
+.mcp.json                                                 # MCP server declarations
 ```
 
 Each `roadup/<package>/` contains its modules and a `tests/` subfolder. Full tree and per-module
@@ -469,11 +476,13 @@ interfaces are in [CODE_REFERENCE.md](CODE_REFERENCE.md).
 | 5 | UI target. | DECIDED | **Omniverse Kit App only.** |
 | 6 | Intersection connection geometry. | DECIDED | **Editable connection spline**; default circular `arc`, edited → `paramPoly3`. |
 | 7 | Lane width along length. | DECIDED | OpenDRIVE `<width>` cubic records driven by an editable width law. |
-| 8 | Road markings. | DECIDED | **Preset registry** (continuous/dashed/double + dims + material); material via `<userData>`. |
+| 8 | Road markings. | DECIDED | **Preset registry** (continuous/dashed/double + dims + material), values in external `presets/markings.yaml`; material via `<userData>`. |
 | 9 | Blender headless. | DECIDED | **Optional**, behind `MeshProcessor`, preferably out-of-process; never required. |
 | 10 | Where does editing intent live across save/load? | DECIDED | OpenDRIVE `<userData>` payloads (control points, tangents, preset ids). |
 | 11 | Hover / control-point visibility. | DECIDED | Headless policy in `tooling.HoverModel`; `omni.ui.scene` renders it; logic is unit-tested. |
-| 12 | OpenDRIVE version target. | PENDING | Target 1.7; confirm 1.8 features needed (e.g. lane-level junctions) during build. |
+| 12 | OpenDRIVE version target. | DECIDED | **1.7** (move to 1.8 only if a needed feature requires it). |
+| 13 | Presets hardcoded or external? | DECIDED | **External, editable YAML** in `presets/`; Python holds only schema + loader. |
+| 14 | Road-design jurisdiction. | DECIDED | **UAE / GCC** target; seeded values **provisional**, validated by the author against official sources (see `road-design-standards`). |
 
 ---
 
@@ -483,7 +492,8 @@ interfaces are in [CODE_REFERENCE.md](CODE_REFERENCE.md).
 |---------|------|--------|---------|
 | 1.0.0 | 2026-06-25 | Architecture Team | Initial USD-first architecture. |
 | 2.0.0 | 2026-06-26 | Architecture Team | Pivot to **OpenDRIVE source of truth**; USD becomes generated viewport output. Lean on scenariogeneration + libOpenDRIVE behind adapters. Editable intersection connection splines; lane width laws; marking presets; explicit segment↔lane link awareness. **Omniverse Kit App is the only UI** (removed Three.js / web). Optional, isolated headless Blender. Code snippets moved to CODE_REFERENCE.md. |
+| 2.1.0 | 2026-06-26 | Architecture Team | **Externalized presets** to editable `presets/*.yaml` (schema + loader stay in code). **Pinned OpenDRIVE 1.7.** Design-standard target set to **UAE / GCC** with provisional seeded values. Added MCP server config + domain-expert skills under `.claude/`. |
 
 ---
 
-*End of Architecture Document v2.0.0 — see [CODE_REFERENCE.md](CODE_REFERENCE.md) for all interface code.*
+*End of Architecture Document v2.1.0 — see [CODE_REFERENCE.md](CODE_REFERENCE.md) for all interface code.*

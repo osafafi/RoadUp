@@ -1,6 +1,6 @@
 # RoadUp — Code Reference
 
-**Companion to [ARCHITECTURE.md](ARCHITECTURE.md).** Version 2.0.0 · 2026-06-26
+**Companion to [ARCHITECTURE.md](ARCHITECTURE.md).** Version 2.1.0 · 2026-06-26
 
 > These are **interface sketches**, not final implementations — signatures, dataclasses, enums, and
 > preset tables that show intended boundaries. The buildable starting point is the stub package under
@@ -122,14 +122,21 @@ def grade_percent(rise: float, run: float) -> float: ...
 ```
 
 ```python
-# common/config.py
+# common/config.py  — global knobs only; preset VALUES are external YAML (§7/§8)
 from dataclasses import dataclass
+from pathlib import Path
+
+PRESETS_DIR_ENV = "ROADUP_PRESETS_DIR"
 
 @dataclass(frozen=True)
 class Config:
-    """Loaded preset/config bundle (road types, marking presets) — see §7/§8."""
-    opendrive_version: str = "1.7"
-    default_sampling_step: float = 1.0  # meters
+    opendrive_version: str = "1.7"        # pinned target
+    default_sampling_step: float = 1.0    # meters
+    presets_dir: str | None = None        # override presets dir; None = default
+
+def resolve_presets_dir(override: str | Path | None = None) -> Path:
+    """Locate presets dir: override -> $ROADUP_PRESETS_DIR -> repo-root presets/."""
+    ...
 
 def load_config(path: str | None = None) -> Config: ...
 ```
@@ -552,15 +559,16 @@ class SnapEngine:
 Authoring a road segment: lane count/layout, width laws along length, and road-type presets.
 
 ```python
-# segments/presets.py
+# segments/presets.py  — SCHEMA + loader only; VALUES live in presets/road_types.yaml (external)
 from dataclasses import dataclass
+from pathlib import Path
 from common.types import RoadType, LaneType
 
 @dataclass(frozen=True)
 class LaneSpec:
     type: LaneType
     width: float
-    marking_preset: str = ""   # outer edge marking preset id (see §8)
+    marking_preset: str = ""   # outer edge marking preset id; must exist in markings.yaml
 
 @dataclass(frozen=True)
 class RoadTypePreset:
@@ -571,13 +579,13 @@ class RoadTypePreset:
     design_speed_kmh: float
     default_fillet_radius: float
 
-ROAD_TYPE_PRESETS: dict[RoadType, RoadTypePreset] = {
-    # Illustrative — final numbers tuned during build.
-    # HIGHWAY: 2x2 driving @3.75 + shoulders, bold edge lines, broken center per direction.
-    # ARTERIAL: 2x2 driving @3.5, solid edges, broken lane lines.
-    # LOCAL: 1x1 driving @3.25, solid edges, broken center.
-    # PEDESTRIAN / BIKE: single surfaces, minimal marks.
-}
+PRESET_FILE = "road_types.yaml"   # under common.config.resolve_presets_dir()
+
+# Values are NOT hardcoded — loaded from presets/road_types.yaml (UAE/GCC, provisional).
+def load_road_type_presets(presets_dir: str | Path | None = None
+                           ) -> dict[RoadType, RoadTypePreset]: ...
+def get_road_type_preset(road_type: RoadType,
+                         presets_dir: str | Path | None = None) -> RoadTypePreset: ...
 ```
 
 ```python
@@ -626,8 +634,9 @@ class SegmentBuilder:
 Road-mark presets: patterns, dimensions, and material parameters. Presets only, for now.
 
 ```python
-# markings/presets.py
+# markings/presets.py  — SCHEMA + loader only; VALUES live in presets/markings.yaml (external)
 from dataclasses import dataclass, field
+from pathlib import Path
 
 @dataclass(frozen=True)
 class MaterialParams:
@@ -648,17 +657,11 @@ class MarkingPreset:
     color: str = "white"      # "white" | "yellow"
     material: MaterialParams = field(default_factory=MaterialParams)
 
-MARKING_PRESETS: dict[str, MarkingPreset] = {
-    "white_solid":        MarkingPreset("white_solid", "solid", 0.15, color="white"),
-    "white_dashed":       MarkingPreset("white_dashed", "broken", 0.15, 3.0, 3.0, color="white"),
-    "yellow_solid":       MarkingPreset("yellow_solid", "solid", 0.15, color="yellow"),
-    "yellow_double":      MarkingPreset("yellow_double", "double_solid", 0.15,
-                                        separation=0.15, color="yellow"),
-    "white_edge_bold":    MarkingPreset("white_edge_bold", "solid", 0.25, color="white"),
-    # Extend as needed; presets only for v2.
-}
+PRESET_FILE = "markings.yaml"   # under common.config.resolve_presets_dir()
 
-def get_preset(preset_id: str) -> MarkingPreset: ...
+# Values are NOT hardcoded — loaded from presets/markings.yaml (UAE/GCC, provisional).
+def load_marking_presets(presets_dir: str | Path | None = None) -> dict[str, MarkingPreset]: ...
+def get_preset(preset_id: str, presets_dir: str | Path | None = None) -> MarkingPreset: ...
 ```
 
 ```python
@@ -1080,4 +1083,4 @@ any third-party OpenDRIVE consumer.
 
 ---
 
-*End of Code Reference v2.0.0 — architecture rationale in [ARCHITECTURE.md](ARCHITECTURE.md).*
+*End of Code Reference v2.1.0 — architecture rationale in [ARCHITECTURE.md](ARCHITECTURE.md).*
