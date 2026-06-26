@@ -644,6 +644,16 @@ class SegmentBuilder:
     def build(self, road_id: str) -> Road:
         """Bake spline -> plan-view geometry, lanes, width records, road marks."""
         ...
+
+
+def bake_reference_line(spline: Spline) -> list[Geometry]:
+    """Lower an editable reference-line spline to OpenDRIVE plan-view records.
+
+    line -> one <line> per polyline segment; arc -> one <arc> (signed curvature);
+    bezier/catmullRom -> one <paramPoly3> per cubic segment in its local frame (exact for cubics,
+    assumes C1 continuity at joints). Reused by intersections to bake connection splines.
+    """
+    ...
 ```
 
 ---

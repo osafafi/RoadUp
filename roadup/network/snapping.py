@@ -29,7 +29,7 @@ class SnapResult:
 class SnapEngine:
     SNAP_DISTANCE = 5.0  # meters
 
-    def __init__(self, index: "SpatialIndex") -> None:
+    def __init__(self, index: SpatialIndex) -> None:
         self._index = index
 
     def find_snap(self, point: Vec3) -> SnapResult:

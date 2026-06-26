@@ -44,7 +44,7 @@ class ScenarioGenerationWriter:
             geo_reference=model.header.geo_reference,
         )
         for road in model.roads.values():
-            sg_road = self._build_road(xodr, road)
+            sg_road = self._build_road(xodr, road, model)
             sg_road.planview.adjust_geometries()
             odr.add_road(sg_road)
         try:
@@ -53,12 +53,42 @@ class ScenarioGenerationWriter:
             raise OpenDriveIOError(f"failed to write {xodr_path}: {exc}") from exc
 
     # --- translation ------------------------------------------------------------------
-    def _build_road(self, xodr: Any, road: Road) -> Any:
+    def _build_road(self, xodr: Any, road: Road, model: OpenDriveModel) -> Any:
         planview = self._build_planview(xodr, road)
         lanes = self._build_lanes(xodr, road)
         sg_road = xodr.Road(self._road_int_id(road.id), planview, lanes, name=road.id)
+        self._add_road_links(xodr, sg_road, road, model)
         self._attach_userdata(xodr, sg_road, road.user_data)
         return sg_road
+
+    def _add_road_links(self, xodr: Any, sg_road: Any, road: Road, model: OpenDriveModel) -> None:
+        if road.link.predecessor is not None:
+            self._add_link_end(xodr, sg_road.add_predecessor, road.link.predecessor, road.id, model)
+        if road.link.successor is not None:
+            self._add_link_end(xodr, sg_road.add_successor, road.link.successor, road.id, model)
+
+    def _add_link_end(
+        self, xodr: Any, add_fn: Any, end: tuple[str, str], source_id: str, model: OpenDriveModel
+    ) -> None:
+        elem_type, elem_id = end
+        if elem_type == "junction":
+            add_fn(xodr.ElementType.junction, self._road_int_id(elem_id))
+            return
+        # contactPoint refers to which end of the *target* road we meet; infer from its back-link.
+        add_fn(xodr.ElementType.road, self._road_int_id(elem_id),
+               self._infer_contact(xodr, model, elem_id, source_id))
+
+    def _infer_contact(
+        self, xodr: Any, model: OpenDriveModel, target_id: str, source_id: str
+    ) -> Any:
+        target = model.roads.get(target_id)
+        if target is None:
+            return None
+        if target.link.predecessor == ("road", source_id):
+            return xodr.ContactPoint.start
+        if target.link.successor == ("road", source_id):
+            return xodr.ContactPoint.end
+        return None
 
     def _build_planview(self, xodr: Any, road: Road) -> Any:
         if not road.geometry:
@@ -118,6 +148,10 @@ class ScenarioGenerationWriter:
                 sg_lane.add_lane_width(a=w.a, b=w.b, c=w.c, d=w.d, soffset=w.s_offset)
         else:
             sg_lane = xodr.Lane(lane_type=lane_type)
+        if lane.link.predecessor is not None:
+            sg_lane.add_link("predecessor", lane.link.predecessor)
+        if lane.link.successor is not None:
+            sg_lane.add_link("successor", lane.link.successor)
         for mark in lane.road_marks:
             sg_lane.add_roadmark(self._build_roadmark(xodr, mark))
         self._attach_userdata(xodr, sg_lane, lane.user_data)

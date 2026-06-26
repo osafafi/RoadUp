@@ -1,16 +1,18 @@
 # RoadUp — Build Status
 
-> **Current stage: Stage 2 — Read & round-trip  ·  ✅ complete**
+> **Current stage: Stage 3 — Authoring (segments + markings + network)  ·  ✅ complete**
 > Last updated: 2026-06-26
 
-**What works right now:** you can author a road network in code with the pure-Python model
-(`roadup.opendrive.model`), validate it, write a valid **OpenDRIVE 1.7 `.xodr`**
-(`roadup.opendrive.io.writer.ScenarioGenerationWriter`), **read it back**
-(`roadup.opendrive.io.reader.LxmlFallbackReader`), and **sample** the model's reference lines into
-station frames + lane-boundary polylines (`roadup.opendrive.eval.sampler.Sampler`, backed by the
-pure-Python plan-view evaluator `roadup.opendrive.eval.planview`). A full write → read → topology +
-`<userData>` round-trip passes on the showcase. The geometry math foundation (splines, sampling,
-offset, mesh) is in place. **93 tests pass, 0 fail; 26 remain skipped** for not-yet-built modules.
+**What works right now:** you can **draw a reference-line `Spline` and bake it** into a road —
+`roadup.segments.builder.SegmentBuilder` lowers the spline to plan-view geometry (line/arc, or one
+`paramPoly3` per cubic segment) and lays out lanes, width laws (`segments.lane_width.WidthLaw`) and
+road marks from **external presets** (`segments.presets` + `markings.presets`, values in
+`presets/*.yaml`). Roads are linked with `network.linkage.LinkResolver` (road↔lane link invariant)
+and queried with `network.graph.RoadGraph`; the writer now **emits `<link>`** and the reader consumes
+it. Everything before still holds: validate the model, write **OpenDRIVE 1.7 `.xodr`**, read it back,
+and sample reference lines + lane boundaries. The **showcase is now the author-side "max variations"
+golden file** — roads drawn-and-baked (one explicit spiral kept, since a clothoid isn't producible by
+cubic-spline baking). **138 tests pass, 0 fail; 17 remain skipped** for not-yet-built modules.
 
 > **Backend note (Stage 2 decision):** read + geometry-eval are **pure-Python** (no native
 > libOpenDRIVE). The spiral/clothoid is evaluated by numeric integration; line/arc/paramPoly3 are
@@ -31,7 +33,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 |---|---|---|
 | **1. Core model & geometry** | `common`, `geometry`, `opendrive/model` | ✅ |
 | **2. OpenDRIVE I/O** | `opendrive/io` (writer ✅, userdata ✅, reader ✅), `opendrive/eval` ✅ | ✅ |
-| **3. Authoring** | `segments`, `markings`, `network` | ⬜ |
+| **3. Authoring** | `segments` ✅, `markings` ✅, `network` (graph+linkage ✅; spatial/snapping → Phase 6) | ✅ |
 | **4. Intersections** | `intersections/{connectivity,connection_spline,junction_builder,surface}` | ⬜ |
 | **5. Output & tooling** | `usd`, `tooling` | ⬜ |
 | **6. Omniverse app** | `app/exts/roadup.tool` | ⬜ |
@@ -64,9 +66,27 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | `opendrive/eval/planview` | ✅ | **new** — pure-Python plan-view evaluation: line/arc/paramPoly3 closed-form, spiral by numeric integration; `eval_record` + `sample_planview` → frames |
 | `opendrive/eval/sampler` | ✅ | `Sampler`: `reference_frames`, `lane_boundaries` (width-law cubic + `geometry/offset`), `road_surface_polylines` |
 
-> Road/lane **linking** is authored in Phase 3 (`network`); the writer does not yet emit `<link>`
-> for cross-road predecessors/successors, and the reader leaves `RoadLink`/`LaneLink` at defaults
-> when `<link>` is empty (it parses populated links for forward-compat).
+### Phase 3 — Authoring ✅
+
+| Module | Status | Notes |
+|---|---|---|
+| `markings/presets` | ✅ | schema + cached YAML loader (`markings.yaml`); `MarkingPreset`/`MaterialParams` |
+| `markings/roadmark` | ✅ | preset → `RoadMark` (pattern→type mirrors the writer so it round-trips); line offsets |
+| `markings/material` | ✅ | `material_key` (stable dedup key for the USD material library) |
+| `segments/presets` | ✅ | schema + cached YAML loader (`road_types.yaml`) → `RoadTypePreset` per `RoadType` |
+| `segments/lane_width` | ✅ | `WidthLaw` constant/linear/spline → baked piecewise-cubic `<width>` records |
+| `segments/builder` | ✅ | `SegmentBuilder` + `bake_reference_line`: spline → line/arc/`paramPoly3` + lanes + marks |
+| `network/linkage` | ✅ | `LinkResolver`: road link + lane link (atomic invariant); default lane map; disconnect/revalidate |
+| `network/graph` | ✅ | `RoadGraph`: adjacency from road links + junction siblings |
+| `opendrive/io/writer` | ✅ | now emits road + lane `<link>` (contactPoint inferred from the reciprocal link) |
+
+> **Bake path (Stage 3 decision):** a freeform (`bezier`/`catmullRom`) reference line lowers to **one
+> `<paramPoly3>` per cubic segment** in its local frame — exact for cubics (sampled geometry traces
+> the drawn curve to ~cm; `tests/integration/test_segment_creation.py` is the gate). `line`/`arc`
+> splines stay single records. Assumes C1 continuity at joints (true for `catmullRom`).
+>
+> **Deferred to Phase 6 (interaction-time):** `network/spatial` (AABB index) and `network/snapping`
+> remain stubs — they depend on sampled bounds and serve the app/tooling layer.
 
 ---
 
@@ -74,7 +94,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 
 ```bash
 . .venv/Scripts/activate                 # Python 3.12 (see README "Requirements")
-pytest -q                                # 93 passed, 26 skipped
+pytest -q                                # 138 passed, 17 skipped
 
 # Generate .xodr files to open in an OpenDRIVE visualizer (-> examples/out/, gitignored):
 python examples/generate_xodr_samples.py
@@ -83,31 +103,36 @@ python examples/generate_xodr_samples.py
 
 pytest tests/integration/test_xodr_write.py -s       # prints a generated .xodr to stdout
 pytest tests/integration/test_xodr_roundtrip.py -s   # write -> read -> compare topology + userData
-ruff check roadup/common roadup/geometry roadup/opendrive   # clean
-mypy roadup/common roadup/geometry roadup/opendrive         # clean
+ruff check roadup/common roadup/geometry roadup/opendrive roadup/segments roadup/markings roadup/network  # clean
+mypy roadup/common roadup/geometry roadup/opendrive roadup/segments roadup/markings roadup/network        # clean
+
+pytest tests/integration/test_segment_creation.py -s  # draw -> bake -> write/read + sampling gate
 ```
 
-> **Toward the full "max variations" golden file:** `examples/showcase.py` already exercises every
-> geometry primitive the writer supports. Authoring those by *drawing a `geometry.Spline` and baking
-> it* (spline → plan-view records + width laws from marking presets) lands with
-> `segments.SegmentBuilder` in **Phase 3** — that's when the showcase becomes the canonical
-> author-side max-variation test rather than hand-authored records.
+> **The showcase is now the author-side "max variations" golden file** (`examples/showcase.py`):
+> roads are *drawn and baked* through `segments.SegmentBuilder` + presets (one explicit spiral kept).
+> `tests/integration/test_xodr_showcase.py` asserts the variety; `test_xodr_roundtrip.py` proves the
+> write→read inverse; `test_segment_creation.py` is the author-side bake-correctness gate.
 
-The 26 skips are placeholder tests for modules in Phases 3–7; each is unskipped and implemented as
-its module is built.
+The 17 skips are placeholder tests for modules in Phases 4–7 (plus `network/spatial` +
+`network/snapping`, deferred to Phase 6); each is unskipped and implemented as its module is built.
 
 ---
 
-## Next stage (Stage 3 — authoring: `segments` + `markings` + `network`)
+## Next stage (Stage 4 — intersections: `intersections/{connectivity,connection_spline,junction_builder,surface}`)
 
-1. `markings/presets` + `segments/presets` — schema + YAML loaders (values in `presets/*.yaml`).
-2. `segments/lane_width` (`WidthLaw` → baked `<width>` records) and `segments/builder`
-   (`SegmentBuilder`: spline → plan-view geometry + lanes + width records + road marks).
-3. `network/{graph,linkage}` — road↔lane link invariant; emit `<link>` on write, consume on read.
-4. The showcase becomes the author-side max-variation golden file (drawn-and-baked, not hand-authored).
+1. `intersections/connectivity` — `ConnectivitySolver`: default movements at a node by geometry + lane type.
+2. `intersections/connection_spline` — `ConnectionSpline`: default tangent-matched arc, editable →
+   `paramPoly3`; `to_geometry_records()` (reuse `segments.builder.bake_reference_line` / `Spline.circular_arc`).
+3. `intersections/junction_builder` — `JunctionBuilder`: build a `Junction` + connecting roads from
+   movements; register `<connection>`/`<laneLink>` (writer/reader junction emission as needed).
+4. `intersections/surface` — `IntersectionSurface`: junction surface mesh (pure-Python; heavy boolean
+   cases delegate to `blender` later).
 
-### Superseded — Stage 2 (read & round-trip) ✅ done
+### Superseded — Stage 3 (authoring) ✅ done
 
-1. `opendrive/io/reader` — `LxmlFallbackReader` (pure-Python, CI-safe) then `LibOpenDriveReader`.
-2. `opendrive/eval/sampler` — sample reference frames + lane boundaries from the model.
-3. Unskip `tests/integration/test_xodr_roundtrip.py`: write → read → compare topology + userData.
+1. `markings/presets` + `segments/presets` — schema + cached YAML loaders.
+2. `segments/lane_width` (`WidthLaw` → `<width>` records) + `segments/builder` (`SegmentBuilder` +
+   `bake_reference_line`: spline → plan-view geometry + lanes + width records + road marks).
+3. `network/{graph,linkage}` — road↔lane link invariant; writer emits `<link>`, reader consumes it.
+4. Showcase rebaked as the drawn-and-baked author-side golden file.
