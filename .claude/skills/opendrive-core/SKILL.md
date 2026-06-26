@@ -15,7 +15,9 @@ Don't write `scenariogeneration` / libOpenDRIVE calls or `.xodr` element layouts
 - **Write path:** `scenariogeneration.xodr` — verify class/param names against the installed version.
 - **Read / eval path:** the libOpenDRIVE binding — verify the parse + sampling API.
 - **Spec questions** (element nesting, attribute semantics): the **ASAM OpenDRIVE** spec is the
-  reference. **Ask the author before fetching it or any docs from the web** (project rule).
+  reference — **target version 1.7**. **Ask the author before fetching it or any docs from the web**
+  (project rule). Reference only (do not fetch without asking): ASAM OpenDRIVE user guide —
+  `https://www.asam.net/index.php?eID=dumpFile&t=f&f=4422&token=e590561f3c39aa2260e5442e29e93f6693d1cccd`
 
 The USD/Kit MCP servers do **not** cover OpenDRIVE — use them only for the USD output layer.
 

@@ -1,7 +1,16 @@
-"""Road-marking presets: pattern, dimensions, material params. CODE_REFERENCE.md S8."""
+"""Marking preset *schema* + loader. Values live in external YAML, not here. CODE_REFERENCE.md S8.
+
+The editable values are in ``presets/markings.yaml`` (see ``presets/README.md``); this module only
+defines the dataclasses and loads them. Initial values target UAE/GCC and are provisional pending
+official validation — see the ``road-design-standards`` skill.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
+
+#: Filename within the resolved presets directory (roadup.common.config.resolve_presets_dir).
+PRESET_FILE = "markings.yaml"
 
 
 @dataclass(frozen=True)
@@ -26,17 +35,13 @@ class MarkingPreset:
     material: MaterialParams = field(default_factory=MaterialParams)
 
 
-MARKING_PRESETS: dict[str, MarkingPreset] = {
-    "white_solid": MarkingPreset("white_solid", "solid", 0.15, color="white"),
-    "white_dashed": MarkingPreset("white_dashed", "broken", 0.15, 3.0, 3.0, color="white"),
-    "yellow_solid": MarkingPreset("yellow_solid", "solid", 0.15, color="yellow",
-                                  material=MaterialParams(color=(1.0, 0.85, 0.0))),
-    "yellow_double": MarkingPreset("yellow_double", "double_solid", 0.15, separation=0.15,
-                                   color="yellow", material=MaterialParams(color=(1.0, 0.85, 0.0))),
-    "white_edge_bold": MarkingPreset("white_edge_bold", "solid", 0.25, color="white"),
-    # Presets only for v2; add more during the build session.
-}
+def load_marking_presets(presets_dir: str | Path | None = None) -> dict[str, MarkingPreset]:
+    """Load and parse ``presets/markings.yaml`` into :class:`MarkingPreset` objects.
+
+    ``presets_dir`` defaults to :func:`roadup.common.config.resolve_presets_dir`.
+    """
+    raise NotImplementedError
 
 
-def get_preset(preset_id: str) -> MarkingPreset:
+def get_preset(preset_id: str, presets_dir: str | Path | None = None) -> MarkingPreset:
     raise NotImplementedError

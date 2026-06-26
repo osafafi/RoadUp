@@ -15,6 +15,7 @@ dependencies = [
     "numpy>=1.24",
     "lxml>=4.9",
     "scenariogeneration>=0.14",  # OpenDRIVE (.xodr) writing
+    "pyyaml>=6.0",               # external, editable presets (presets/*.yaml)
 ]
 
 [project.optional-dependencies]

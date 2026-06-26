@@ -1,0 +1,49 @@
+# RoadUp — lane-marking presets (EXTERNAL, EDITABLE)
+#
+# These VALUES are intentionally not hardcoded in Python. Edit freely.
+# Schema/loader: roadup/markings/presets.py · docs: presets/README.md
+#
+# ⚠️ PROVISIONAL — target UAE / GCC roads, NOT yet validated against official sources.
+#
+# Units: meters.  pattern ∈ {solid, broken, double_solid, solid_broken, broken_solid}.
+# material.color is linear RGB in 0..1.  dash_length/gap_length apply to broken patterns;
+# separation applies to double patterns.
+
+version: 1
+provisional: true
+jurisdiction: "UAE / GCC (provisional — validate against official sources)"
+
+markings:
+
+  white_solid:
+    pattern: solid
+    line_width: 0.15
+    color: white
+    material: { color: [1.0, 1.0, 1.0], roughness: 0.7 }
+
+  white_dashed:
+    pattern: broken
+    line_width: 0.15
+    dash_length: 3.0
+    gap_length: 9.0
+    color: white
+    material: { color: [1.0, 1.0, 1.0], roughness: 0.7 }
+
+  white_edge_bold:
+    pattern: solid
+    line_width: 0.20
+    color: white
+    material: { color: [1.0, 1.0, 1.0], roughness: 0.7 }
+
+  yellow_solid:
+    pattern: solid
+    line_width: 0.15
+    color: yellow
+    material: { color: [1.0, 0.85, 0.0], roughness: 0.7 }
+
+  yellow_double:
+    pattern: double_solid
+    line_width: 0.15
+    separation: 0.15
+    color: yellow
+    material: { color: [1.0, 0.85, 0.0], roughness: 0.7 }

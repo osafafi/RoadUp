@@ -33,8 +33,10 @@ training data or the web.** Local servers; the http ones need their Docker conta
 
 If a server's tools aren't loaded, fetch via ToolSearch (e.g. `select:mcp__usd-mcp__search_usd_code_examples`).
 
-> **OpenDRIVE has no MCP.** Ground OpenDRIVE work in the `scenariogeneration` (write) and libOpenDRIVE
-> (read/eval) APIs plus the ASAM OpenDRIVE spec. **Ask before fetching any spec/docs from the web.**
+> **OpenDRIVE has no MCP.** Target **version 1.7**. Ground OpenDRIVE work in the `scenariogeneration`
+> (write) and libOpenDRIVE (read/eval) APIs plus the ASAM OpenDRIVE spec. **Ask before fetching any
+> spec/docs from the web.** Reference only (do **not** fetch without asking): ASAM OpenDRIVE user
+> guide — `https://www.asam.net/index.php?eID=dumpFile&t=f&f=4422&token=e590561f3c39aa2260e5442e29e93f6693d1cccd`
 
 ## Hard conventions (enforce everywhere)
 
@@ -49,6 +51,10 @@ If a server's tools aren't loaded, fetch via ToolSearch (e.g. `select:mcp__usd-m
   marking-preset ids) so a read → edit → write cycle round-trips losslessly.
 - **Generated USD prims carry `roadup:*` id tags** (`roadId`/`laneId`/`junctionId`/`controlPointId`)
   so viewport picking/hover maps back to model elements.
+- **Presets are externalized.** Road-type & marking preset *values* live in editable
+  `presets/*.yaml`, never hardcoded; the registries (`segments/presets`, `markings/presets`) define
+  the schema and load them. Initial values target **UAE / GCC** and are **provisional** pending
+  official validation (see the `road-design-standards` skill).
 - **Naming:** `snake_case` modules/functions, `PascalCase` classes, zero-padded type-prefixed ids
   (`road_001`, `junction_007`). USD paths `PascalCase` under `/RoadNetwork`.
 - **Tests co-located** per package; they run on plain Python using fakes — no native deps in CI.

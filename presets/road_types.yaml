@@ -1,0 +1,68 @@
+# RoadUp — road-type presets (EXTERNAL, EDITABLE)
+#
+# These VALUES are intentionally not hardcoded in Python. Edit freely.
+# Schema/loader: roadup/segments/presets.py · docs: presets/README.md
+#
+# ⚠️ PROVISIONAL — target UAE / GCC roads, NOT yet validated against official sources.
+#    Replace with cited figures and log them in the road-design-standards cheatsheet.
+#
+# Units: meters, km/h.  Lane ids: right = -1,-2,…  left = +1,+2,…  center = 0.
+# Each lane's `marking_preset` must exist in markings.yaml.
+
+version: 1
+provisional: true
+jurisdiction: "UAE / GCC (provisional — validate against official sources)"
+
+road_types:
+
+  highway:
+    design_speed_kmh: 120.0
+    default_fillet_radius: 12.0
+    center_marking_preset: yellow_double
+    lane_specs_right:
+      - { type: driving,  width: 3.65, marking_preset: white_dashed }
+      - { type: driving,  width: 3.65, marking_preset: white_dashed }
+      - { type: driving,  width: 3.65, marking_preset: white_solid }
+      - { type: shoulder, width: 3.00, marking_preset: white_edge_bold }
+    lane_specs_left:
+      - { type: driving,  width: 3.65, marking_preset: white_dashed }
+      - { type: driving,  width: 3.65, marking_preset: white_dashed }
+      - { type: driving,  width: 3.65, marking_preset: white_solid }
+      - { type: shoulder, width: 3.00, marking_preset: white_edge_bold }
+
+  arterial:
+    design_speed_kmh: 80.0
+    default_fillet_radius: 9.0
+    center_marking_preset: yellow_double
+    lane_specs_right:
+      - { type: driving, width: 3.50, marking_preset: white_dashed }
+      - { type: driving, width: 3.50, marking_preset: white_solid }
+    lane_specs_left:
+      - { type: driving, width: 3.50, marking_preset: white_dashed }
+      - { type: driving, width: 3.50, marking_preset: white_solid }
+
+  local:
+    design_speed_kmh: 40.0
+    default_fillet_radius: 6.0
+    center_marking_preset: white_dashed
+    lane_specs_right:
+      - { type: driving, width: 3.25, marking_preset: white_solid }
+    lane_specs_left:
+      - { type: driving, width: 3.25, marking_preset: white_solid }
+
+  pedestrian:
+    design_speed_kmh: 10.0
+    default_fillet_radius: 2.0
+    center_marking_preset: ""
+    lane_specs_right:
+      - { type: sidewalk, width: 2.50, marking_preset: "" }
+    lane_specs_left: []
+
+  bike:
+    design_speed_kmh: 25.0
+    default_fillet_radius: 3.0
+    center_marking_preset: ""
+    lane_specs_right:
+      - { type: biking, width: 1.50, marking_preset: white_solid }
+    lane_specs_left:
+      - { type: biking, width: 1.50, marking_preset: white_solid }

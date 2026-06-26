@@ -1,19 +1,25 @@
-"""Road-type presets: lane layout, default markings, speeds. CODE_REFERENCE.md S7.
+"""Road-type preset *schema* + loader. Values live in external YAML, not here. CODE_REFERENCE.md S7.
 
-The numbers below are illustrative starting points; tune during the build session.
+The editable values are in ``presets/road_types.yaml`` (see ``presets/README.md``); this module only
+defines the dataclasses and loads them. Initial values target UAE/GCC and are provisional pending
+official validation — see the ``road-design-standards`` skill.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from roadup.common.types import LaneType, RoadType
+
+#: Filename within the resolved presets directory (roadup.common.config.resolve_presets_dir).
+PRESET_FILE = "road_types.yaml"
 
 
 @dataclass(frozen=True)
 class LaneSpec:
     type: LaneType
     width: float
-    marking_preset: str = ""   # outer-edge marking preset id (see markings.presets)
+    marking_preset: str = ""   # outer-edge marking preset id (must exist in markings.yaml)
 
 
 @dataclass(frozen=True)
@@ -26,33 +32,18 @@ class RoadTypePreset:
     default_fillet_radius: float
 
 
-# Illustrative presets - extend/tune during the build session.
-ROAD_TYPE_PRESETS: dict[RoadType, RoadTypePreset] = {
-    RoadType.LOCAL: RoadTypePreset(
-        road_type=RoadType.LOCAL,
-        lane_specs_right=(LaneSpec(LaneType.DRIVING, 3.25, "white_solid"),),
-        lane_specs_left=(LaneSpec(LaneType.DRIVING, 3.25, "white_solid"),),
-        center_marking_preset="yellow_solid",
-        design_speed_kmh=50.0,
-        default_fillet_radius=3.0,
-    ),
-    RoadType.ARTERIAL: RoadTypePreset(
-        road_type=RoadType.ARTERIAL,
-        lane_specs_right=(
-            LaneSpec(LaneType.DRIVING, 3.5, "white_dashed"),
-            LaneSpec(LaneType.DRIVING, 3.5, "white_solid"),
-        ),
-        lane_specs_left=(
-            LaneSpec(LaneType.DRIVING, 3.5, "white_dashed"),
-            LaneSpec(LaneType.DRIVING, 3.5, "white_solid"),
-        ),
-        center_marking_preset="yellow_double",
-        design_speed_kmh=80.0,
-        default_fillet_radius=8.0,
-    ),
-    # HIGHWAY / PEDESTRIAN / BIKE: add during build.
-}
+def load_road_type_presets(
+    presets_dir: str | Path | None = None,
+) -> dict[RoadType, RoadTypePreset]:
+    """Load and parse ``presets/road_types.yaml`` into :class:`RoadTypePreset` objects.
+
+    ``presets_dir`` defaults to :func:`roadup.common.config.resolve_presets_dir`.
+    """
+    raise NotImplementedError
 
 
-def get_road_type_preset(road_type: RoadType) -> RoadTypePreset:
+def get_road_type_preset(
+    road_type: RoadType,
+    presets_dir: str | Path | None = None,
+) -> RoadTypePreset:
     raise NotImplementedError
