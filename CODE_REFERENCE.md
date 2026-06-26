@@ -454,8 +454,27 @@ def decode(blob: str) -> dict[str, Any]: ...
 
 ## 5. opendrive.eval
 
-Sampling for meshing/visualization — delegated to libOpenDRIVE so we don't re-implement
-spiral/poly3/paramPoly3 evaluation.
+Sampling for meshing/visualization. The default path is **pure-Python** (no native dep): plan-view
+records are evaluated by `eval/planview.py` (line/arc/paramPoly3 closed-form, spiral by numeric
+integration). A native libOpenDRIVE backend can replace this path behind the same `Sampler` surface
+once a binding is pinned (deferred; ARCHITECTURE.md decision 4).
+
+```python
+# opendrive/eval/planview.py  — pure-Python plan-view evaluation
+from common.types import Vec3
+from geometry.sampling import Frame
+from opendrive.model.road import Geometry
+
+def eval_record(geom: Geometry, ds: float) -> Vec3:
+    """(x, y, hdg) at local arc length ds along one plan-view record (3rd item is heading, not z).
+    line/arc closed-form; spiral integrated numerically; paramPoly3 with arc-length->parameter map."""
+    ...
+
+def sample_planview(geometry: list[Geometry], step: float) -> list[Frame]:
+    """Ordered geometry records -> station frames ~step m apart (true cumulative s, analytic
+    tangents, +t left normal); shared record joints de-duplicated."""
+    ...
+```
 
 ```python
 # opendrive/eval/sampler.py

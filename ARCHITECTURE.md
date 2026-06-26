@@ -75,9 +75,10 @@ Editing in the viewport mutates the OpenDRIVE model and regenerates the affected
 |  |  OPENDRIVE  (source of truth)                                         |  |
 |  |    model/   thin dataclasses: Road · LaneSection · Lane · LaneWidth   |  |
 |  |             RoadMark · Junction · Connection · LaneLink               |  |
-|  |    io/      reader (libOpenDRIVE) · writer (scenariogeneration) ·     |  |
-|  |             userdata (round-trip editing intent via <userData>)      |  |
-|  |    eval/    sampler (libOpenDRIVE): ref-line frames, lane boundaries  |  |
+|  |    io/      reader (lxml pure-Python; libOpenDRIVE deferred) ·        |  |
+|  |             writer (scenariogeneration) · userdata (<userData>)       |  |
+|  |    eval/    planview (pure-Python record eval) + sampler:             |  |
+|  |             ref-line frames, lane boundaries                          |  |
 |  +-----------------------------------+-----------------------------------+  |
 |         |               |            |               |              |        |
 |  +------+----+  +-------+-----+  +---+--------+  +---+--------+  +--+-----+   |
@@ -143,8 +144,8 @@ Detailed interfaces are in [CODE_REFERENCE.md](CODE_REFERENCE.md) under the matc
 | `common/` | Shared enums, dataclasses, IDs, units, error hierarchy, config loading. | — | Yes |
 | `geometry/` | Editable control-point splines, curve sampling, lateral offset, `MeshData` + builders. | numpy | Yes |
 | `opendrive/model/` | Thin dataclasses mirroring OpenDRIVE 1.x elements (the source-of-truth model). | — | Yes |
-| `opendrive/io/` | `.xodr` read (libOpenDRIVE adapter) and write (scenariogeneration adapter); `<userData>` round-trip. | scenariogeneration, libOpenDRIVE, lxml | Adapter-isolated |
-| `opendrive/eval/` | Sample the model into ref-line frames and lane boundary polylines for meshing. | libOpenDRIVE | Adapter-isolated |
+| `opendrive/io/` | `.xodr` read (pure-Python lxml default; libOpenDRIVE adapter deferred) and write (scenariogeneration adapter); `<userData>` round-trip. | scenariogeneration, lxml, (libOpenDRIVE) | Adapter-isolated |
+| `opendrive/eval/` | Pure-Python plan-view eval (`planview`: line/arc/paramPoly3 closed-form, spiral integrated) + `sampler`: ref-line frames and lane boundary polylines for meshing. A native libOpenDRIVE path can replace eval behind the same surface. | numpy, (libOpenDRIVE) | Adapter-isolated |
 | `network/` | Topology graph, spatial index, snapping queries, and **road↔lane link resolution**. | numpy | Yes |
 | `segments/` | Author a road: lane count, lane types, **lane width laws along length**, road-type presets (loaded from external `presets/road_types.yaml`). | pyyaml | Yes |
 | `markings/` | Road-mark model + **presets** (continuous / dashed / double, dimensions, material params) loaded from external `presets/markings.yaml`. | pyyaml | Yes |

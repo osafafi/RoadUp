@@ -1,6 +1,7 @@
 {
   "enableAllProjectMcpServers": true,
   "permissions": {
+    "defaultMode": "bypassPermissions",
     "allow": [
       "mcp__usd-mcp__*",
       "mcp__kit-dev-mcp__*",

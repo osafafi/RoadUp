@@ -1,13 +1,21 @@
 # RoadUp — Build Status
 
-> **Current stage: Stage 1 — Foundation + first `.xodr`  ·  ✅ complete**
+> **Current stage: Stage 2 — Read & round-trip  ·  ✅ complete**
 > Last updated: 2026-06-26
 
 **What works right now:** you can author a road network in code with the pure-Python model
-(`roadup.opendrive.model`), validate it, and write a valid **OpenDRIVE 1.7 `.xodr`** via
-`roadup.opendrive.io.writer.ScenarioGenerationWriter`. Editing intent round-trips through
-`<userData code="roadup">`. The geometry math foundation (splines, sampling, offset, mesh) is in
-place. **65 tests pass, 0 fail; 30 remain skipped** for not-yet-built modules.
+(`roadup.opendrive.model`), validate it, write a valid **OpenDRIVE 1.7 `.xodr`**
+(`roadup.opendrive.io.writer.ScenarioGenerationWriter`), **read it back**
+(`roadup.opendrive.io.reader.LxmlFallbackReader`), and **sample** the model's reference lines into
+station frames + lane-boundary polylines (`roadup.opendrive.eval.sampler.Sampler`, backed by the
+pure-Python plan-view evaluator `roadup.opendrive.eval.planview`). A full write → read → topology +
+`<userData>` round-trip passes on the showcase. The geometry math foundation (splines, sampling,
+offset, mesh) is in place. **93 tests pass, 0 fail; 26 remain skipped** for not-yet-built modules.
+
+> **Backend note (Stage 2 decision):** read + geometry-eval are **pure-Python** (no native
+> libOpenDRIVE). The spiral/clothoid is evaluated by numeric integration; line/arc/paramPoly3 are
+> closed-form. `LibOpenDriveReader` stays a stub and `default_reader()` falls back to the lxml
+> reader — a native binding can slot in behind `ReaderBackend` later (ARCHITECTURE.md decision 4).
 
 This file is the single source of truth for "where are we". It is part of the
 **definition of done**: any change that advances or alters the build updates this file in the same
@@ -22,7 +30,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | Phase | Scope | Status |
 |---|---|---|
 | **1. Core model & geometry** | `common`, `geometry`, `opendrive/model` | ✅ |
-| **2. OpenDRIVE I/O** | `opendrive/io` (writer ✅, userdata ✅, reader ⬜), `opendrive/eval` ⬜ | 🚧 |
+| **2. OpenDRIVE I/O** | `opendrive/io` (writer ✅, userdata ✅, reader ✅), `opendrive/eval` ✅ | ✅ |
 | **3. Authoring** | `segments`, `markings`, `network` | ⬜ |
 | **4. Intersections** | `intersections/{connectivity,connection_spline,junction_builder,surface}` | ⬜ |
 | **5. Output & tooling** | `usd`, `tooling` | ⬜ |
@@ -45,18 +53,20 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | `opendrive/model/junction` | ✅ | dataclasses (junction *building* is Phase 4) |
 | `opendrive/model/network` | ✅ | `OpenDriveModel` add/get/remove/validate |
 
-### Phase 2 — OpenDRIVE I/O 🚧
+### Phase 2 — OpenDRIVE I/O ✅
 
 | Module | Status | Notes |
 |---|---|---|
 | `opendrive/io/userdata` | ✅ | stable-order JSON `encode`/`decode` for `<userData code="roadup">` |
 | `opendrive/io/writer` | ✅ | `ScenarioGenerationWriter` (sole `scenariogeneration` importer): geometry (line/arc/spiral/paramPoly3), lanes, width laws, road marks, userData → 1.7 `.xodr` |
-| `opendrive/io/reader` | ⬜ | libOpenDRIVE + lxml fallback → **Stage 2** |
-| `opendrive/io/backend` | ⬜ | protocols defined; reader impls pending |
-| `opendrive/eval/sampler` | ⬜ | model → frames/lane boundaries → **Stage 2** |
+| `opendrive/io/reader` | ✅ | `LxmlFallbackReader` (pure-Python, CI default) — inverse of the writer; `default_reader()` falls back to it. `LibOpenDriveReader` stub deferred until a binding is pinned |
+| `opendrive/io/backend` | ✅ | `ReaderBackend`/`WriterBackend` protocols satisfied |
+| `opendrive/eval/planview` | ✅ | **new** — pure-Python plan-view evaluation: line/arc/paramPoly3 closed-form, spiral by numeric integration; `eval_record` + `sample_planview` → frames |
+| `opendrive/eval/sampler` | ✅ | `Sampler`: `reference_frames`, `lane_boundaries` (width-law cubic + `geometry/offset`), `road_surface_polylines` |
 
 > Road/lane **linking** is authored in Phase 3 (`network`); the writer does not yet emit `<link>`
-> for cross-road predecessors/successors.
+> for cross-road predecessors/successors, and the reader leaves `RoadLink`/`LaneLink` at defaults
+> when `<link>` is empty (it parses populated links for forward-compat).
 
 ---
 
@@ -64,14 +74,15 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 
 ```bash
 . .venv/Scripts/activate                 # Python 3.12 (see README "Requirements")
-pytest -q                                # 69 passed, 30 skipped
+pytest -q                                # 93 passed, 26 skipped
 
 # Generate .xodr files to open in an OpenDRIVE visualizer (-> examples/out/, gitignored):
 python examples/generate_xodr_samples.py
 #   showcase.xodr  + one file per sample road
 #   covers line / arc / spiral / paramPoly3, 6 lane types, white+yellow + double marks, a width taper
 
-pytest tests/integration/test_xodr_write.py -s   # prints a generated .xodr to stdout
+pytest tests/integration/test_xodr_write.py -s       # prints a generated .xodr to stdout
+pytest tests/integration/test_xodr_roundtrip.py -s   # write -> read -> compare topology + userData
 ruff check roadup/common roadup/geometry roadup/opendrive   # clean
 mypy roadup/common roadup/geometry roadup/opendrive         # clean
 ```
@@ -82,12 +93,20 @@ mypy roadup/common roadup/geometry roadup/opendrive         # clean
 > `segments.SegmentBuilder` in **Phase 3** — that's when the showcase becomes the canonical
 > author-side max-variation test rather than hand-authored records.
 
-The 30 skips are placeholder tests for modules in Phases 2–7; each is unskipped and implemented as
+The 26 skips are placeholder tests for modules in Phases 3–7; each is unskipped and implemented as
 its module is built.
 
 ---
 
-## Next stage (Stage 2 — read & round-trip)
+## Next stage (Stage 3 — authoring: `segments` + `markings` + `network`)
+
+1. `markings/presets` + `segments/presets` — schema + YAML loaders (values in `presets/*.yaml`).
+2. `segments/lane_width` (`WidthLaw` → baked `<width>` records) and `segments/builder`
+   (`SegmentBuilder`: spline → plan-view geometry + lanes + width records + road marks).
+3. `network/{graph,linkage}` — road↔lane link invariant; emit `<link>` on write, consume on read.
+4. The showcase becomes the author-side max-variation golden file (drawn-and-baked, not hand-authored).
+
+### Superseded — Stage 2 (read & round-trip) ✅ done
 
 1. `opendrive/io/reader` — `LxmlFallbackReader` (pure-Python, CI-safe) then `LibOpenDriveReader`.
 2. `opendrive/eval/sampler` — sample reference frames + lane boundaries from the model.
