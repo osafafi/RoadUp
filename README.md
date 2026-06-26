@@ -28,11 +28,17 @@ app/exts/roadup.tool/   Omniverse Kit extension (viewport input, manipulators, p
 tests/             integration tests + fixtures (unit tests are co-located per package)
 ```
 
+## Requirements
+
+**Python 3.12** (CPython 3.12.x). This is not arbitrary: the `roadup` core is imported by the Kit extension inside Omniverse Kit's *embedded* interpreter, so the dev/test interpreter must match it.
+The targeted **Kit SDK 110.1.x** embeds **CPython 3.12.13**. Develop and test on 3.12.
+
 ## Quickstart
 
 ```bash
-# from the repo root
-python -m venv .venv && . .venv/Scripts/activate      # Windows; use bin/activate on POSIX
+# from the repo root — Python 3.12 required (see Requirements)
+py -3.12 -m venv .venv && . .venv/Scripts/activate    # Windows; use bin/activate on POSIX
+# or with uv:  uv venv --python 3.12 .venv
 pip install -e ".[dev]"                                # core + dev tools
 pip install -e ".[dev,read,usd,accel]"                 # add backends when building those layers
 
