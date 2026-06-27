@@ -159,13 +159,18 @@ class Spline:
         r = abs(radius)
         a0 = float(np.arctan2(p0[1] - center[1], p0[0] - center[0]))
         a1 = float(np.arctan2(p1[1] - center[1], p1[0] - center[0]))
-        # Choose sweep direction consistent with the start tangent.
-        if radius > 0:  # center on the left -> counter-clockwise
-            while a1 < a0:
-                a1 += 2 * np.pi
+        # Sweep the direction whose tangent at the start matches start_tangent — i.e. the *minimal*
+        # arc consistent with t0, never the reflex one. Going counter-clockwise (increasing angle)
+        # matches t0 iff t0 is the +90° rotation of the radius (p0 - center); else go clockwise.
+        radius_dir = p0 - center
+        ccw = float(radius_dir[0] * t0[1] - radius_dir[1] * t0[0]) > 0.0
+        two_pi = 2 * np.pi
+        if ccw:
+            while a1 <= a0:
+                a1 += two_pi
         else:
-            while a1 > a0:
-                a1 -= 2 * np.pi
+            while a1 >= a0:
+                a1 -= two_pi
 
         sp = cls(
             points=[ControlPoint(position=start, id="cp_001"),

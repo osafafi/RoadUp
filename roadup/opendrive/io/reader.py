@@ -17,6 +17,7 @@ from roadup.common.errors import OpenDriveIOError
 from roadup.common.ids import make_id
 from roadup.common.types import GeometryType, LaneType
 from roadup.opendrive.io.userdata import USERDATA_NS, decode
+from roadup.opendrive.model.junction import Connection, Junction, LaneLinkPair
 from roadup.opendrive.model.network import Header, OpenDriveModel
 from roadup.opendrive.model.road import (
     Geometry,
@@ -59,8 +60,14 @@ class LxmlFallbackReader:
             )
 
         model = OpenDriveModel(header=self._parse_header(root.find("header")))
+        # Connections refer to roads by integer id; remember the mapping back to our string ids.
+        int_to_road_id: dict[int, str] = {}
         for road_el in root.findall("road"):
-            model.add_road(self._parse_road(road_el))
+            road = self._parse_road(road_el)
+            model.add_road(road)
+            int_to_road_id[int(road_el.get("id", "0"))] = road.id
+        for junction_el in root.findall("junction"):
+            model.add_junction(self._parse_junction(junction_el, int_to_road_id))
         return model
 
     # --- header -----------------------------------------------------------------------
@@ -114,6 +121,39 @@ class LxmlFallbackReader:
         except (TypeError, ValueError):
             elem_id = raw_id
         return (elem_type, elem_id)
+
+    # --- junctions --------------------------------------------------------------------
+    def _parse_junction(
+        self, el: etree._Element, int_to_road_id: dict[int, str]
+    ) -> Junction:
+        junction = Junction(
+            id=make_id("junction", int(el.get("id", "0"))),
+            name=el.get("name", ""),
+            user_data=self._userdata(el),
+        )
+        for conn_el in el.findall("connection"):
+            junction.connections.append(self._parse_connection(conn_el, int_to_road_id))
+        return junction
+
+    def _parse_connection(
+        self, el: etree._Element, int_to_road_id: dict[int, str]
+    ) -> Connection:
+        def road_ref(raw: str | None) -> str:
+            return int_to_road_id.get(int(raw), make_id("road", int(raw))) if raw else ""
+
+        return Connection(
+            id=make_id("connection", int(el.get("id", "0"))),
+            incoming_road=road_ref(el.get("incomingRoad")),
+            connecting_road=road_ref(el.get("connectingRoad")),
+            contact_point=el.get("contactPoint", "start"),
+            lane_links=[
+                LaneLinkPair(
+                    from_lane=int(ll.get("from", "0")),
+                    to_lane=int(ll.get("to", "0")),
+                )
+                for ll in el.findall("laneLink")
+            ],
+        )
 
     # --- geometry ---------------------------------------------------------------------
     def _parse_geometry(self, road_el: etree._Element) -> list[Geometry]:

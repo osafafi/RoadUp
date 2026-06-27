@@ -33,6 +33,7 @@ from pathlib import Path
 from examples.showcase import build_showcase_model, showcase_roads
 from roadup.common.types import Vec3
 from roadup.geometry.mesh import MeshBuilder, MeshData
+from roadup.intersections.surface import IntersectionSurface
 from roadup.opendrive.eval.sampler import Sampler
 from roadup.opendrive.model.network import OpenDriveModel
 
@@ -68,11 +69,21 @@ def road_meshes(sampler: Sampler, road_id: str) -> list[tuple[str, MeshData]]:
 
 
 def model_meshes(model: OpenDriveModel, step: float = 1.0) -> list[tuple[str, MeshData]]:
-    """All (name, mesh) ribbons for every road in the model."""
+    """All (name, mesh) ribbons for the model: each non-junction road, plus one junction surface.
+
+    Connecting roads (``road.junction is not None``) are omitted as individual ribbons because the
+    junction surface already unions them (see ``roadup.intersections.surface.IntersectionSurface``).
+    """
     sampler = Sampler(model, step=step)
     meshes: list[tuple[str, MeshData]] = []
-    for road_id in model.roads:
+    for road_id, road in model.roads.items():
+        if road.junction is not None:
+            continue
         meshes.extend(road_meshes(sampler, road_id))
+    for junction_id, junction in model.junctions.items():
+        surface = IntersectionSurface(sampler).generate(junction)
+        if surface.points:
+            meshes.append((f"{junction_id}_Surface", surface))
     return meshes
 
 

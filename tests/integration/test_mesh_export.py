@@ -23,15 +23,19 @@ def test_every_road_yields_a_surface_and_one_ribbon_per_lane() -> None:
 
 
 def test_ribbon_faces_are_in_range_quads() -> None:
-    meshes = model_meshes(build_showcase_model())
+    model = build_showcase_model()
+    meshes = model_meshes(model)
     assert meshes
-    for _name, mesh in meshes:
-        assert mesh.points, "ribbon has no vertices"
+    junction_surfaces = {f"{jid}_Surface" for jid in model.junctions}
+    for name, mesh in meshes:
+        assert mesh.points, "mesh has no vertices"
+        assert max(mesh.face_vertex_indices) < len(mesh.points)
+        assert mesh.is_manifold()
+        if name in junction_surfaces:
+            continue  # junction surface = ribbons + a fan cap (mixed quads/tris), not a pure ribbon
         # ribbon between two equal-length polylines -> even vertex count, all quad faces.
         assert len(mesh.points) % 2 == 0
         assert set(mesh.face_vertex_counts) == {4}
-        assert max(mesh.face_vertex_indices) < len(mesh.points)
-        assert mesh.is_manifold()
 
 
 def test_obj_round_trips_to_disk(tmp_path: Path) -> None:

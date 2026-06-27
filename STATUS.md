@@ -1,18 +1,24 @@
 # RoadUp — Build Status
 
-> **Current stage: Stage 3 — Authoring (segments + markings + network)  ·  ✅ complete**
-> Last updated: 2026-06-26
+> **Current stage: Stage 4 — Intersections (connectivity + connection splines + junctions)  ·  ✅ complete**
+> Last updated: 2026-06-27
 
-**What works right now:** you can **draw a reference-line `Spline` and bake it** into a road —
-`roadup.segments.builder.SegmentBuilder` lowers the spline to plan-view geometry (line/arc, or one
-`paramPoly3` per cubic segment) and lays out lanes, width laws (`segments.lane_width.WidthLaw`) and
-road marks from **external presets** (`segments.presets` + `markings.presets`, values in
-`presets/*.yaml`). Roads are linked with `network.linkage.LinkResolver` (road↔lane link invariant)
-and queried with `network.graph.RoadGraph`; the writer now **emits `<link>`** and the reader consumes
-it. Everything before still holds: validate the model, write **OpenDRIVE 1.7 `.xodr`**, read it back,
-and sample reference lines + lane boundaries. The **showcase is now the author-side "max variations"
-golden file** — roads drawn-and-baked (one explicit spiral kept, since a clothoid isn't producible by
-cubic-spline baking). **138 tests pass, 0 fail; 17 remain skipped** for not-yet-built modules.
+**What works right now:** you can **author a junction** where several roads meet —
+`roadup.intersections.connectivity.ConnectivitySolver` seeds geometry-aware default movements
+(straight/left/right by heading delta, RHT lane pairing), `roadup.intersections.junction_builder.JunctionBuilder`
+authors a **connecting road per movement** whose reference line is an **editable
+`ConnectionSpline`** — the default is the simplest tangent-honouring connector (`<line>` for
+straight-throughs, minimal `<arc>` for symmetric turns, else a tangent-matched cubic Bézier →
+`paramPoly3`), and it upgrades to a control-point spline when edited — registers the
+`<connection>`/`<laneLink>`, and
+`roadup.intersections.surface.IntersectionSurface` meshes the junction surface (connecting-road
+ribbons + a fan cap, pure-Python). The writer now **emits `<junction>`** (connecting roads carry the
+junction id) and the reader parses it back. Stage 3 still holds: **draw a reference-line `Spline` and
+bake it** via `SegmentBuilder` into plan-view geometry + lanes + width laws + road marks from
+**external presets** (`presets/*.yaml`); link roads with `network.linkage.LinkResolver`; validate,
+write **OpenDRIVE 1.7 `.xodr`**, read it back, and sample reference lines + lane boundaries. The
+**showcase golden file** now includes a 4-way junction alongside the drawn-and-baked roads.
+**158 tests pass, 0 fail; 12 remain skipped** for not-yet-built modules (Phases 5–7).
 
 > **Backend note (Stage 2 decision):** read + geometry-eval are **pure-Python** (no native
 > libOpenDRIVE). The spiral/clothoid is evaluated by numeric integration; line/arc/paramPoly3 are
@@ -34,7 +40,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | **1. Core model & geometry** | `common`, `geometry`, `opendrive/model` | ✅ |
 | **2. OpenDRIVE I/O** | `opendrive/io` (writer ✅, userdata ✅, reader ✅), `opendrive/eval` ✅ | ✅ |
 | **3. Authoring** | `segments` ✅, `markings` ✅, `network` (graph+linkage ✅; spatial/snapping → Phase 6) | ✅ |
-| **4. Intersections** | `intersections/{connectivity,connection_spline,junction_builder,surface}` | ⬜ |
+| **4. Intersections** | `intersections/{connectivity,connection_spline,junction_builder,surface}` ✅; writer/reader `<junction>` ✅ | ✅ |
 | **5. Output & tooling** | `usd`, `tooling` | ⬜ |
 | **6. Omniverse app** | `app/exts/roadup.tool` | ⬜ |
 | **7. Optional acceleration** | `blender` | ⬜ |
@@ -88,13 +94,33 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 > **Deferred to Phase 6 (interaction-time):** `network/spatial` (AABB index) and `network/snapping`
 > remain stubs — they depend on sampled bounds and serve the app/tooling layer.
 
+### Phase 4 — Intersections ✅
+
+| Module | Status | Notes |
+|---|---|---|
+| `intersections/connectivity` | ✅ | `ConnectivitySolver.movements_at`: per-road node contact + travel dir (`road_ends`), heading-delta turn classification (straight/left/right, u-turns dropped), RHT driving-lane pairing inner-to-inner |
+| `intersections/connection_spline` | ✅ | `ConnectionSpline`: default = simplest tangent-honouring connector (`<line>` straight / minimal `<arc>` symmetric / tangent-matched cubic Bézier → `paramPoly3` for skew); `add_control_point` upgrades to a Catmull-Rom spline; reuses `segments.builder.bake_reference_line`; `<userData>` payload |
+| `intersections/junction_builder` | ✅ | `JunctionBuilder`: connecting road per movement (lane centre from `Sampler.lane_boundaries`), `<connection>`/`<laneLink>`, road+lane links, editable-spline registry, `rebuild_connection` |
+| `intersections/surface` | ✅ | `IntersectionSurface`: connecting-road ribbons (`MeshBuilder.ribbon`) + fan cap (`polygon_surface`), pure-Python; boolean union deferred to `blender` (Phase 7) |
+| `opendrive/io/writer` | ✅ | now emits `<junction>` + `<connection>`/`<laneLink>`; connecting roads carry the junction id (`road_type`) |
+| `opendrive/io/reader` | ✅ | parses `<junction>` back (int road-id → string id map) |
+
+> **Intersection design (Stage 4):** connectivity (which lanes connect) is resolved separately from
+> spline *shape* (the path). Default movements are geometry-aware (RHT, UAE-GCC). The default
+> connector is the simplest curve honouring both lane-end tangents — line / minimal arc / tangent-
+> matched cubic Bézier — since a single arc can't honour two arbitrary tangents (a clothoid/biarc
+> fitter is a deferred fidelity upgrade). The connecting road's reference line anchors on the lane's
+> **inner edge** (a connecting lane spans one side of its reference line). Editing intent (control
+> points) round-trips via `<userData>`; sampled records stay canonical.
+> `tests/integration/test_intersection_editing.py` is the gate.
+
 ---
 
 ## See it / verify locally
 
 ```bash
 . .venv/Scripts/activate                 # Python 3.12 (see README "Requirements")
-pytest -q                                # 138 passed, 17 skipped
+pytest -q                                # 158 passed, 12 skipped
 
 # Generate .xodr files to open in an OpenDRIVE visualizer (-> examples/out/, gitignored):
 python examples/generate_xodr_samples.py
@@ -112,7 +138,8 @@ pytest tests/integration/test_xodr_roundtrip.py -s   # write -> read -> compare 
 ruff check roadup/common roadup/geometry roadup/opendrive roadup/segments roadup/markings roadup/network  # clean
 mypy roadup/common roadup/geometry roadup/opendrive roadup/segments roadup/markings roadup/network        # clean
 
-pytest tests/integration/test_segment_creation.py -s  # draw -> bake -> write/read + sampling gate
+pytest tests/integration/test_segment_creation.py -s     # draw -> bake -> write/read + sampling gate
+pytest tests/integration/test_intersection_editing.py -s # build junction -> edit spline -> round-trip
 ```
 
 > **The showcase is now the author-side "max variations" golden file** (`examples/showcase.py`):
@@ -120,20 +147,28 @@ pytest tests/integration/test_segment_creation.py -s  # draw -> bake -> write/re
 > `tests/integration/test_xodr_showcase.py` asserts the variety; `test_xodr_roundtrip.py` proves the
 > write→read inverse; `test_segment_creation.py` is the author-side bake-correctness gate.
 
-The 17 skips are placeholder tests for modules in Phases 4–7 (plus `network/spatial` +
+The 12 skips are placeholder tests for modules in Phases 5–7 (plus `network/spatial` +
 `network/snapping`, deferred to Phase 6); each is unskipped and implemented as its module is built.
 
 ---
 
-## Next stage (Stage 4 — intersections: `intersections/{connectivity,connection_spline,junction_builder,surface}`)
+## Next stage (Stage 5 — output & tooling: `usd`, `tooling`)
 
-1. `intersections/connectivity` — `ConnectivitySolver`: default movements at a node by geometry + lane type.
-2. `intersections/connection_spline` — `ConnectionSpline`: default tangent-matched arc, editable →
-   `paramPoly3`; `to_geometry_records()` (reuse `segments.builder.bake_reference_line` / `Spline.circular_arc`).
-3. `intersections/junction_builder` — `JunctionBuilder`: build a `Junction` + connecting roads from
-   movements; register `<connection>`/`<laneLink>` (writer/reader junction emission as needed).
-4. `intersections/surface` — `IntersectionSurface`: junction surface mesh (pure-Python; heavy boolean
-   cases delegate to `blender` later).
+1. `usd/mapping` + `usd/materials` — prim-path helpers + `roadup:*` id tags; `MaterialLibrary` from
+   marking `MaterialParams` (dedup by `material_key`). Consult the **usd-viewport** skill / usd-mcp.
+2. `usd/stage` — `StageGenerator`: build the viewport stage from `OpenDriveModel` + `Sampler` (road
+   surfaces, lane-edge marking strips, junction surfaces via `intersections.surface`); incremental
+   `update_road` / `update_junction`; show the resulting `.usda`.
+3. `tooling/{manipulators,hover,commands,controller,preview}` — headless interaction model (no
+   `omni.*`): handles, hover policy, undoable commands, the `RoadToolController`.
+
+### Superseded — Stage 4 (intersections) ✅ done
+
+1. `intersections/connectivity` — geometry-aware default movements (turn classification + RHT lane pairing).
+2. `intersections/connection_spline` — default arc (or line), editable → `paramPoly3`; `<userData>` round-trip.
+3. `intersections/junction_builder` — `Junction` + connecting roads + `<connection>`/`<laneLink>`; rebuild on edit.
+4. `intersections/surface` — pure-Python junction surface (ribbons + fan cap).
+5. Writer/reader `<junction>` emission + parse; showcase + obj generators gain a 4-way junction.
 
 ### Superseded — Stage 3 (authoring) ✅ done
 

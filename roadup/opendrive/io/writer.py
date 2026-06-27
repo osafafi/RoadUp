@@ -47,6 +47,8 @@ class ScenarioGenerationWriter:
             sg_road = self._build_road(xodr, road, model)
             sg_road.planview.adjust_geometries()
             odr.add_road(sg_road)
+        for junction in model.junctions.values():
+            odr.add_junction(self._build_junction(xodr, junction))
         try:
             odr.write_xml(xodr_path)
         except Exception as exc:  # scenariogeneration raises plain exceptions
@@ -56,10 +58,31 @@ class ScenarioGenerationWriter:
     def _build_road(self, xodr: Any, road: Road, model: OpenDriveModel) -> Any:
         planview = self._build_planview(xodr, road)
         lanes = self._build_lanes(xodr, road)
-        sg_road = xodr.Road(self._road_int_id(road.id), planview, lanes, name=road.id)
+        # road_type carries the junction id for a connecting road; -1 means "not in a junction".
+        road_type = self._road_int_id(road.junction) if road.junction is not None else -1
+        sg_road = xodr.Road(self._road_int_id(road.id), planview, lanes,
+                            road_type=road_type, name=road.id)
         self._add_road_links(xodr, sg_road, road, model)
         self._attach_userdata(xodr, sg_road, road.user_data)
         return sg_road
+
+    def _build_junction(self, xodr: Any, junction: Any) -> Any:
+        sg_junction = xodr.Junction(junction.name, self._road_int_id(junction.id))
+        for conn in junction.connections:
+            contact = (
+                xodr.ContactPoint.end if conn.contact_point == "end" else xodr.ContactPoint.start
+            )
+            sg_conn = xodr.Connection(
+                self._road_int_id(conn.incoming_road),
+                self._road_int_id(conn.connecting_road),
+                contact,
+                id=self._road_int_id(conn.id),
+            )
+            for link in conn.lane_links:
+                sg_conn.add_lanelink(link.from_lane, link.to_lane)
+            sg_junction.add_connection(sg_conn)
+        self._attach_userdata(xodr, sg_junction, junction.user_data)
+        return sg_junction
 
     def _add_road_links(self, xodr: Any, sg_road: Any, road: Road, model: OpenDriveModel) -> None:
         if road.link.predecessor is not None:

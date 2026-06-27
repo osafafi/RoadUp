@@ -11,16 +11,23 @@ it through :class:`~roadup.segments.builder.SegmentBuilder` + the external prese
   plus a width **taper** applied via :meth:`SegmentBuilder.set_lane_width_law`.
 * **Marking variety:** solid / broken / double-solid (``yellow_double``), white + yellow.
 * **Topology:** the highway's successor is linked to the arc connector (road + lane ``<link>``).
+* **Intersection:** a 4-way ``<junction>`` (``junction_001``) with default connection splines —
+  arcs for the turns, lines for the straight-throughs (see ``roadup.intersections``).
 """
 from __future__ import annotations
 
 from roadup.common.types import GeometryType, LaneType, RoadType
 from roadup.geometry.splines import ControlPoint, Spline
+from roadup.intersections.connectivity import ConnectivitySolver
+from roadup.intersections.junction_builder import JunctionBuilder
 from roadup.network.linkage import LinkResolver
 from roadup.opendrive.model.network import Header, OpenDriveModel
 from roadup.opendrive.model.road import Geometry, Lane, LaneSection, Road, RoadMark, WidthRecord
 from roadup.segments.builder import SegmentBuilder
 from roadup.segments.lane_width import WidthLaw
+
+# Centre of the showcase 4-way junction (placed clear of the baseline roads).
+_JUNCTION_CENTER = (200.0, 0.0)
 
 
 def _line_spline(start: tuple[float, float, float], end: tuple[float, float, float]) -> Spline:
@@ -100,16 +107,46 @@ def _spiral() -> Road:
                 user_data={"kind": "referenceLine", "note": "spiral / clothoid transition"})
 
 
+# --- a 4-way junction (drawn-and-built, default connection splines) --------------------
+def _cross_road(road_id: str, dx: float, dy: float) -> Road:
+    """One arm of the junction: a 2-lane arterial radiating from the junction centre."""
+    cx, cy = _JUNCTION_CENTER
+    spline = _line_spline((cx + dx * 8.0, cy + dy * 8.0, 0.0),
+                          (cx + dx * 48.0, cy + dy * 48.0, 0.0))
+    return (
+        SegmentBuilder(RoadType.ARTERIAL)
+        .with_lane_count(left=1, right=1)
+        .with_reference_line(spline)
+        .build(road_id)
+    )
+
+
+def junction_cross_roads() -> list[Road]:
+    """The four incoming roads of the showcase junction (east / north / west / south)."""
+    return [
+        _cross_road("road_010", 1.0, 0.0),
+        _cross_road("road_011", 0.0, 1.0),
+        _cross_road("road_012", -1.0, 0.0),
+        _cross_road("road_013", 0.0, -1.0),
+    ]
+
+
 def showcase_roads() -> list[Road]:
-    """The showcase roads in id order."""
+    """The baseline showcase roads in id order (the junction is added in the combined model)."""
     return [_highway(), _arc_connector(), _spiral(), _freeform_bike(), _pedestrian()]
 
 
 def build_showcase_model() -> OpenDriveModel:
-    """Assemble all showcase roads into one model (the combined golden file), with a link."""
+    """Assemble all showcase roads into the combined golden-file model (with a link + junction)."""
     model = OpenDriveModel(header=Header(name="RoadUp Showcase", version="1.7"))
     for road in showcase_roads():
         model.add_road(road)
     # Topology: the highway flows into the arc connector (road + lane links).
     LinkResolver(model).connect_roads("road_001", "end", "road_002", "start")
+    # A 4-way junction with default connection splines (arcs for turns, lines for straights).
+    cross = junction_cross_roads()
+    for road in cross:
+        model.add_road(road)
+    movements = ConnectivitySolver(model).movements_at([r.id for r in cross])
+    JunctionBuilder(model).build("junction_001", movements)
     return model
