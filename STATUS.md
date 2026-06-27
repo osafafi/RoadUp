@@ -17,7 +17,8 @@ junction id) and the reader parses it back. Stage 3 still holds: **draw a refere
 bake it** via `SegmentBuilder` into plan-view geometry + lanes + width laws + road marks from
 **external presets** (`presets/*.yaml`); link roads with `network.linkage.LinkResolver`; validate,
 write **OpenDRIVE 1.7 `.xodr`**, read it back, and sample reference lines + lane boundaries. The
-**showcase golden file** now includes a 4-way junction alongside the drawn-and-baked roads.
+**showcase golden file** now includes a 5-junction stress gallery (classic 4-way, a complex skewed
+4-way with unequal lane counts + mismatched widths, a 2-road bend, a 3-way, and a 5-road star).
 **158 tests pass, 0 fail; 12 remain skipped** for not-yet-built modules (Phases 5–7).
 
 > **Backend note (Stage 2 decision):** read + geometry-eval are **pure-Python** (no native

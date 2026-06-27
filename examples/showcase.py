@@ -11,11 +11,16 @@ it through :class:`~roadup.segments.builder.SegmentBuilder` + the external prese
   plus a width **taper** applied via :meth:`SegmentBuilder.set_lane_width_law`.
 * **Marking variety:** solid / broken / double-solid (``yellow_double``), white + yellow.
 * **Topology:** the highway's successor is linked to the arc connector (road + lane ``<link>``).
-* **Intersection:** a 4-way ``<junction>`` (``junction_001``) with default connection splines —
-  arcs for the turns, lines for the straight-throughs (see ``roadup.intersections``).
+* **Intersections (a stress-test gallery):** five ``<junction>``\\ s of increasing nastiness — a
+  classic perpendicular 4-way, a *complex* 4-way (skewed angles, unequal lane counts, mismatched
+  lane widths), a 2-road bend, a skewed 3-way, and a 5-road star. Each gets geometry-aware default
+  movements + connection splines (line / arc / Bézier). See ``roadup.intersections``.
 """
 from __future__ import annotations
 
+import math
+
+from roadup.common.ids import IdAllocator
 from roadup.common.types import GeometryType, LaneType, RoadType
 from roadup.geometry.splines import ControlPoint, Spline
 from roadup.intersections.connectivity import ConnectivitySolver
@@ -26,8 +31,7 @@ from roadup.opendrive.model.road import Geometry, Lane, LaneSection, Road, RoadM
 from roadup.segments.builder import SegmentBuilder
 from roadup.segments.lane_width import WidthLaw
 
-# Centre of the showcase 4-way junction (placed clear of the baseline roads).
-_JUNCTION_CENTER = (200.0, 0.0)
+Vec2 = tuple[float, float]
 
 
 def _line_spline(start: tuple[float, float, float], end: tuple[float, float, float]) -> Spline:
@@ -107,46 +111,89 @@ def _spiral() -> Road:
                 user_data={"kind": "referenceLine", "note": "spiral / clothoid transition"})
 
 
-# --- a 4-way junction (drawn-and-built, default connection splines) --------------------
-def _cross_road(road_id: str, dx: float, dy: float) -> Road:
-    """One arm of the junction: a 2-lane arterial radiating from the junction centre."""
-    cx, cy = _JUNCTION_CENTER
-    spline = _line_spline((cx + dx * 8.0, cy + dy * 8.0, 0.0),
-                          (cx + dx * 48.0, cy + dy * 48.0, 0.0))
-    return (
+# --- junctions (drawn-and-built, default connection splines) --------------------------
+# An arm spec: (heading degrees from the junction centre, #left lanes, #right lanes,
+# {lane_id: width} overrides). Defaults give a plain 3.5 m 2-way arterial arm.
+class _Arm:
+    def __init__(self, angle_deg: float, left: int = 1, right: int = 1,
+                 widths: dict[int, float] | None = None) -> None:
+        self.angle_deg = angle_deg
+        self.left = left
+        self.right = right
+        self.widths = widths or {}
+
+
+def _arm_road(road_id: str, center: Vec2, arm: _Arm, near: float, far: float) -> Road:
+    """One incoming road radiating from the junction centre at ``arm.angle_deg``."""
+    a = math.radians(arm.angle_deg)
+    dx, dy = math.cos(a), math.sin(a)
+    cx, cy = center
+    spline = _line_spline((cx + dx * near, cy + dy * near, 0.0),
+                          (cx + dx * far, cy + dy * far, 0.0))
+    builder = (
         SegmentBuilder(RoadType.ARTERIAL)
-        .with_lane_count(left=1, right=1)
+        .with_lane_count(left=arm.left, right=arm.right)
         .with_reference_line(spline)
-        .build(road_id)
     )
+    for lane_id, width in arm.widths.items():
+        builder.set_lane_width_law(lane_id, WidthLaw.constant(width))
+    return builder.build(road_id)
 
 
-def junction_cross_roads() -> list[Road]:
-    """The four incoming roads of the showcase junction (east / north / west / south)."""
-    return [
-        _cross_road("road_010", 1.0, 0.0),
-        _cross_road("road_011", 0.0, 1.0),
-        _cross_road("road_012", -1.0, 0.0),
-        _cross_road("road_013", 0.0, -1.0),
-    ]
+def _add_junction(model: OpenDriveModel, junction_id: str, center: Vec2,
+                  arms: list[_Arm], near: float = 11.0, far: float = 56.0) -> None:
+    """Author the arm roads + a junction with default connection splines, onto ``model``.
+
+    Arm-road ids are allocated above whatever roads already exist, so junctions stack without
+    id collisions (each :class:`JunctionBuilder` then allocates its connecting roads above those).
+    """
+    alloc = IdAllocator()
+    for road_id in model.roads:
+        alloc.reserve(road_id)
+    arm_ids: list[str] = []
+    for arm in arms:
+        road_id = alloc.next("road")
+        model.add_road(_arm_road(road_id, center, arm, near, far))
+        arm_ids.append(road_id)
+    movements = ConnectivitySolver(model).movements_at(arm_ids)
+    JunctionBuilder(model).build(junction_id, movements)
 
 
 def showcase_roads() -> list[Road]:
-    """The baseline showcase roads in id order (the junction is added in the combined model)."""
+    """The baseline showcase roads in id order (junctions are added in the combined model)."""
     return [_highway(), _arc_connector(), _spiral(), _freeform_bike(), _pedestrian()]
 
 
 def build_showcase_model() -> OpenDriveModel:
-    """Assemble all showcase roads into the combined golden-file model (with a link + junction)."""
+    """Assemble the baseline roads + the junction stress-test gallery into one golden-file model."""
     model = OpenDriveModel(header=Header(name="RoadUp Showcase", version="1.7"))
     for road in showcase_roads():
         model.add_road(road)
     # Topology: the highway flows into the arc connector (road + lane links).
     LinkResolver(model).connect_roads("road_001", "end", "road_002", "start")
-    # A 4-way junction with default connection splines (arcs for turns, lines for straights).
-    cross = junction_cross_roads()
-    for road in cross:
-        model.add_road(road)
-    movements = ConnectivitySolver(model).movements_at([r.id for r in cross])
-    JunctionBuilder(model).build("junction_001", movements)
+
+    # junction_001 — classic perpendicular 4-way (the baseline sanity case).
+    _add_junction(model, "junction_001", (200.0, 0.0),
+                  [_Arm(0), _Arm(90), _Arm(180), _Arm(270)])
+
+    # junction_002 — COMPLEX: skewed (non-perpendicular) angles, unequal lane counts per arm, and
+    # mismatched lane widths (a wide 4.5 m arm meets a narrow 3.0 m arm -> tapered connectors).
+    _add_junction(model, "junction_002", (200.0, 200.0), [
+        _Arm(5,   left=2, right=2, widths={-1: 4.5, -2: 4.5}),  # wide arm
+        _Arm(80,  left=1, right=1),
+        _Arm(200, left=1, right=3, widths={-1: 3.0}),           # narrow + extra lanes
+        _Arm(290, left=2, right=1),
+    ], near=14.0, far=60.0)
+
+    # junction_003 — minimal 2-road junction (a bend).
+    _add_junction(model, "junction_003", (380.0, 0.0), [_Arm(0), _Arm(210)])
+
+    # junction_004 — skewed 3-way (Y) with unequal lane counts.
+    _add_junction(model, "junction_004", (380.0, 200.0),
+                  [_Arm(0, left=1, right=2), _Arm(110), _Arm(235, left=2, right=1)])
+
+    # junction_005 — 5-road star.
+    _add_junction(model, "junction_005", (560.0, 0.0),
+                  [_Arm(a) for a in (0, 72, 144, 216, 288)])
+
     return model
