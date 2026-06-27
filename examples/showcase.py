@@ -30,6 +30,7 @@ from roadup.opendrive.model.network import Header, OpenDriveModel
 from roadup.opendrive.model.road import Geometry, Lane, LaneSection, Road, RoadMark, WidthRecord
 from roadup.segments.builder import SegmentBuilder
 from roadup.segments.lane_width import WidthLaw
+from roadup.segments.vertical_profile import ElevationLaw, SuperelevationLaw
 
 Vec2 = tuple[float, float]
 
@@ -86,6 +87,29 @@ def _pedestrian() -> Road:
     """Straight pedestrian way -> sidewalk lane."""
     spline = _line_spline((0.0, 170.0, 0.0), (50.0, 170.0, 0.0))
     return SegmentBuilder(RoadType.PEDESTRIAN).with_reference_line(spline).build("road_005")
+
+
+def _elevated_banked_curve() -> Road:
+    """A climbing, banked circular curve — the Stage 4.5 vertical + lateral profile showpiece.
+
+    Exercises an ``<elevationProfile>`` (a steady 3% grade) and a ``<lateralProfile>`` (the bank
+    ramps up to 6° into the turn) on top of an ``arc`` reference line, so the curvature-adaptive
+    sampler densifies the bend while the climb/bank keep it from collapsing. The editing intent
+    (both laws) round-trips through ``<userData>``.
+    """
+    arc = Spline.circular_arc(
+        start=(0.0, 250.0, 0.0), start_tangent=(1.0, 0.0, 0.0),
+        end=(60.0, 310.0, 0.0), end_tangent=(0.0, 1.0, 0.0),
+    )
+    length = arc.length()
+    return (
+        SegmentBuilder(RoadType.ARTERIAL)
+        .with_reference_line(arc)
+        .with_lane_count(left=1, right=1)
+        .with_elevation(ElevationLaw.grade(length=length, slope=0.03))
+        .with_superelevation(SuperelevationLaw.ramp(0.0, 0.0, length, math.radians(6.0)))
+        .build("road_006")
+    )
 
 
 # --- explicitly-authored clothoid (not producible by cubic-spline baking) -------------
@@ -161,7 +185,8 @@ def _add_junction(model: OpenDriveModel, junction_id: str, center: Vec2,
 
 def showcase_roads() -> list[Road]:
     """The baseline showcase roads in id order (junctions are added in the combined model)."""
-    return [_highway(), _arc_connector(), _spiral(), _freeform_bike(), _pedestrian()]
+    return [_highway(), _arc_connector(), _spiral(), _freeform_bike(), _pedestrian(),
+            _elevated_banked_curve()]
 
 
 def build_showcase_model() -> OpenDriveModel:

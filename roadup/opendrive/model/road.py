@@ -32,6 +32,36 @@ class WidthRecord:
 
 
 @dataclass
+class ElevationRecord:
+    """``<elevationProfile><elevation>``: ``z(ds) = a + b*ds + c*ds^2 + d*ds^3`` from ``s``.
+
+    ``ds = s_query - s`` is local to this record (``s`` is the reference-line station where it
+    starts). Vertical profile only — the plan-view ``s`` is unchanged by elevation.
+    """
+
+    s: float
+    a: float
+    b: float = 0.0
+    c: float = 0.0
+    d: float = 0.0
+
+
+@dataclass
+class SuperelevationRecord:
+    """``<lateralProfile><superelevation>``: roll/bank angle ``α(ds) = a + b*ds + c*ds^2 + d*ds^3``.
+
+    ``a..d`` are in **radians** (cubic in ``ds = s_query - s``). Positive rotates the cross-section
+    about the reference-line tangent so +t (left) rises.
+    """
+
+    s: float
+    a: float
+    b: float = 0.0
+    c: float = 0.0
+    d: float = 0.0
+
+
+@dataclass
 class RoadMark:
     """``<lane><roadMark>`` geometric/semantic part; material preset rides in ``user_data``."""
 
@@ -99,6 +129,8 @@ class Road:
     length: float = 0.0
     geometry: list[Geometry] = field(default_factory=list)         # plan-view reference line
     lane_sections: list[LaneSection] = field(default_factory=list)
+    elevation: list[ElevationRecord] = field(default_factory=list)        # vertical profile z(s)
+    superelevation: list[SuperelevationRecord] = field(default_factory=list)  # bank angle α(s)
     link: RoadLink = field(default_factory=RoadLink)
     junction: str | None = None    # set when this is a connecting road inside a junction
     user_data: dict = field(default_factory=dict)

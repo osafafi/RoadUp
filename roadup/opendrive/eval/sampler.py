@@ -6,17 +6,20 @@ same surface once a binding is pinned (deferred; see ARCHITECTURE.md decision 4)
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from roadup.common.config import Config
 from roadup.common.types import Vec3
 from roadup.geometry.offset import offset_polyline
-from roadup.opendrive.eval.planview import sample_planview
+from roadup.opendrive.eval.elevation import apply_profiles, vertical_angle_fn
+from roadup.opendrive.eval.planview import sample_planview, sample_planview_adaptive
 
 if TYPE_CHECKING:
     from roadup.geometry.sampling import Frame
     from roadup.opendrive.model.network import OpenDriveModel
-    from roadup.opendrive.model.road import Lane, LaneSection
+    from roadup.opendrive.model.road import Lane, LaneSection, Road
 
 
 @dataclass
@@ -29,13 +32,37 @@ class LaneBoundaries:
 class Sampler:
     """Wraps libOpenDRIVE evaluation; falls back to :mod:`roadup.geometry` for the pure path."""
 
-    def __init__(self, model: OpenDriveModel, step: float = 1.0) -> None:
+    def __init__(
+        self,
+        model: OpenDriveModel,
+        step: float = 1.0,
+        *,
+        config: Config | None = None,
+        adaptive: bool = True,
+    ) -> None:
         self._model = model
         self._step = step
+        self._config = config or Config()
+        self._adaptive = adaptive
 
     def reference_frames(self, road_id: str) -> list[Frame]:
         road = self._model.get_road(road_id)
-        return sample_planview(road.geometry, self._step)
+        frames = self._sample_reference(road)
+        return apply_profiles(frames, road)
+
+    def _sample_reference(self, road: Road) -> list[Frame]:
+        """Plan-view frames for ``road`` — curvature-adaptive by default, uniform on request."""
+        if not self._adaptive:
+            return sample_planview(road.geometry, self._step)
+        cfg = self._config
+        return sample_planview_adaptive(
+            road.geometry,
+            max_angle=math.radians(cfg.adaptive_max_angle_deg),
+            max_chord_error=cfg.adaptive_chord_tol,
+            min_step=cfg.adaptive_min_step,
+            max_step=cfg.adaptive_max_step,
+            vertical_angle=vertical_angle_fn(road),
+        )
 
     def lane_boundaries(self, road_id: str, s0: float, s1: float) -> list[LaneBoundaries]:
         """Inner/outer boundary polylines for each lane of the section governing ``s0``.

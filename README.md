@@ -7,13 +7,17 @@ viewport.
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) — responsibilities, boundaries, data flow, decisions.
 - **Interfaces / code sketches:** [CODE_REFERENCE.md](CODE_REFERENCE.md) — class/function signatures per module.
 
-> **Stage: 4 / 7 — Intersections ✅** · see **[STATUS.md](STATUS.md)** for the exact, per-module
-> build state. The pure-Python core through authoring and intersections is implemented: draw a
-> reference-line spline and **bake** it into a road (geometry + lanes + width laws + marking presets),
-> link roads (road↔lane link invariant), and **author junctions** — geometry-aware default movements,
-> editable connection splines (line / minimal arc / tangent-matched Bézier), and a junction surface.
-> Round-trips through the **OpenDRIVE 1.7 writer + pure-Python reader** (incl. `<junction>`) and
-> samples to meshes. Phases 5–7 (USD viewport, headless tooling, Kit app, optional Blender) are stubs.
+> **Stage: 4.5 / 7 — Elevation, banking & adaptive sampling ✅** · see **[STATUS.md](STATUS.md)**
+> for the exact, per-module build state. The pure-Python core through authoring and intersections is
+> implemented: draw a reference-line spline and **bake** it into a road (geometry + lanes + width
+> laws + marking presets), link roads (road↔lane link invariant), and **author junctions** —
+> geometry-aware default movements, editable connection splines (line / minimal arc / tangent-matched
+> Bézier), and a junction surface. Roads now carry an editable **vertical profile (elevation) and
+> superelevation (banking)** that round-trip through the **OpenDRIVE 1.7 writer + pure-Python
+> reader** (incl. `<elevationProfile>` / `<lateralProfile>` and `<junction>`); evaluation lifts the
+> sampled frames into 3D. Meshing samples **curvature-adaptively** — straights collapse to two
+> triangles, curves and grades densify. Phases 5–7 (USD viewport, headless tooling, Kit app, optional
+> Blender) are stubs.
 
 ## Layout
 

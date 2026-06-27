@@ -13,6 +13,7 @@ from roadup.markings.roadmark import to_road_mark
 from roadup.opendrive.model.road import Geometry, Lane, LaneSection, Road
 from roadup.segments.lane_width import WidthLaw
 from roadup.segments.presets import LaneSpec, RoadTypePreset, get_road_type_preset
+from roadup.segments.vertical_profile import ElevationLaw, SuperelevationLaw
 
 
 class SegmentBuilder:
@@ -25,9 +26,21 @@ class SegmentBuilder:
         self._right_count: int | None = None
         self._width_laws: dict[int, WidthLaw] = {}
         self._markings: dict[int, str] = {}
+        self._elevation: ElevationLaw | None = None
+        self._superelevation: SuperelevationLaw | None = None
 
     def with_reference_line(self, spline: Spline) -> SegmentBuilder:
         self._spline = spline
+        return self
+
+    def with_elevation(self, law: ElevationLaw) -> SegmentBuilder:
+        """Set the vertical profile (``z`` along ``s``); baked to ``<elevation>`` records."""
+        self._elevation = law
+        return self
+
+    def with_superelevation(self, law: SuperelevationLaw) -> SegmentBuilder:
+        """Set the lateral bank profile (angle along ``s``); baked to ``<superelevation>``."""
+        self._superelevation = law
         return self
 
     def with_lane_count(self, left: int, right: int) -> SegmentBuilder:
@@ -51,18 +64,33 @@ class SegmentBuilder:
         geometry = bake_reference_line(self._spline)
         length = sum(g.length for g in geometry)
         section = self._build_section(preset)
+        user_data: dict = {
+            "kind": "referenceLine",
+            "splineKind": self._spline.kind,
+            "controlPoints": [
+                {"id": cp.id, "pos": list(cp.position)} for cp in self._spline.points
+            ],
+        }
+        if self._elevation is not None:
+            user_data["elevationLaw"] = {
+                "kind": self._elevation.kind,
+                "control": [list(c) for c in self._elevation.control],
+            }
+        if self._superelevation is not None:
+            user_data["superelevationLaw"] = {
+                "kind": self._superelevation.kind,
+                "control": [list(c) for c in self._superelevation.control],
+            }
         return Road(
             id=road_id,
             length=length,
             geometry=geometry,
             lane_sections=[section],
-            user_data={
-                "kind": "referenceLine",
-                "splineKind": self._spline.kind,
-                "controlPoints": [
-                    {"id": cp.id, "pos": list(cp.position)} for cp in self._spline.points
-                ],
-            },
+            elevation=self._elevation.bake_records() if self._elevation is not None else [],
+            superelevation=(
+                self._superelevation.bake_records() if self._superelevation is not None else []
+            ),
+            user_data=user_data,
         )
 
     # --- lanes ------------------------------------------------------------------------

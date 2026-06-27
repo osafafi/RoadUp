@@ -178,6 +178,8 @@ except *editing intent*, which is preserved in `<userData>`.
 | Reference line (editable) | a control-point spline → serialized geometry records | Default straight/arc; extra control points → `paramPoly3`. |
 | Lane count & layout | `<laneSection>` with `<left>/<center>/<right>` `<lane>` | Multiple lane sections allow the count to change along the road. |
 | **Lane width along length** | one or more `<width sOffset a b c d>` per lane | A piecewise cubic *width law*; multiple records vary width along `s`. |
+| **Road elevation (z along s)** | `<elevationProfile><elevation s a b c d>` | A piecewise cubic *vertical profile law*; absent ⇒ flat (`z=0`). |
+| **Road banking (superelevation)** | `<lateralProfile><superelevation s a b c d>` | A piecewise cubic *bank-angle law* (radians); rolls the cross-section about the reference line. `<shape>` (lane crown) deferred. |
 | Lane type | `<lane type=...>` | vehicle / sidewalk / biking / parking / shoulder / etc. |
 | **Road markings** | `<roadMark>` (+ `<type>/<line>` for dashes) | type (solid/broken/solid-solid…), weight, color, width, dash length/space. |
 | Marking **material** | `<userData>` on the road mark (preset id) | OpenDRIVE has no material model; the USD layer resolves the preset → material. |
@@ -226,6 +228,19 @@ at the `s` where the change occurs. Presets (per road type) seed a sensible defa
 **Lane width along length.** Each lane carries a **width law**: a list of `<width>` records, each a
 cubic `a + b·ds + c·ds² + d·ds³` valid from an `sOffset`. The authoring layer exposes this as an
 editable law (constant, linear taper, or control-point curve) and bakes it to `<width>` records.
+
+**Road elevation & banking.** A road carries a **vertical profile** (`z` along `s`) and a
+**superelevation** (bank angle along `s`), each authored as the *same* kind of 1D law as lane width
+(`segments.vertical_profile.ElevationLaw` / `SuperelevationLaw`: constant / linear / control-point
+spline) and baked to `<elevationProfile><elevation>` / `<lateralProfile><superelevation>` cubic
+records. They are authored independently of the plan-view spline — matching OpenDRIVE's own
+separation of horizontal, vertical, and lateral geometry — and round-trip via `<userData>`. The
+sampler (`opendrive.eval.elevation.apply_profiles`) lifts the planar station frames into 3D (sets
+`z`, pitches the tangent by the elevation slope, rolls the +t normal by the bank angle), so lateral
+offsetting and meshing inherit elevation + banking with no further work. Sampling is
+**curvature-adaptive**: station density tracks the tangent's turn (heading + pitch + bank), collapsing
+straights to two triangles while refining curves and grades. `<lateralProfile><shape>` (per-lane
+crown) and junction elevation-continuity are deferred.
 
 **Road markings (presets for now).** A marking preset bundles:
 

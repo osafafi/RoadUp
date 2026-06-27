@@ -13,6 +13,7 @@ geometry-evaluation path used when no native libOpenDRIVE backend is pinned (the
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -77,6 +78,109 @@ def sample_planview(geometry: list[Geometry], step: float) -> list[Frame]:
                 continue
             frames.append(_frame(geom.s + float(ts), float(tx[i]), float(ty[i]), float(th[i])))
     return frames
+
+
+def sample_planview_adaptive(
+    geometry: list[Geometry],
+    *,
+    max_angle: float,
+    max_chord_error: float,
+    min_step: float,
+    max_step: float,
+    vertical_angle: Callable[[float], float] | None = None,
+) -> list[Frame]:
+    """Sample a reference line with **curvature-adaptive** station spacing.
+
+    A station is emitted only when the reference frame's tangent has turned by more than
+    ``max_angle`` (radians) since the last one, or the chord would deviate from the true curve by
+    more than ``max_chord_error`` (metres) — bounded below by ``min_step`` (caps hairpin density)
+    and above by ``max_step``. The turn metric is the plan-view heading change plus, when
+    ``vertical_angle`` is supplied, the change in the vertical angle (elevation pitch + bank) at the
+    same global ``s`` — so a rising or banking straight still gets enough samples while a flat
+    straight collapses to its two endpoints (one quad, two triangles).
+
+    The fixed-grid :func:`sample_planview` remains available for callers that want a uniform step.
+    """
+    if max_angle <= 0.0 or min_step <= 0.0 or max_step <= 0.0:
+        raise GeometryError("adaptive sampling needs positive max_angle/min_step/max_step")
+    if not geometry:
+        raise GeometryError("plan-view has no geometry records")
+
+    frames: list[Frame] = []
+    for geom in sorted(geometry, key=lambda g: g.s):
+        s_local, xs, ys, hdgs = _dense_record(geom)
+        total = float(s_local[-1])
+        if total <= 0.0:
+            continue
+        hdg_unwrapped = np.unwrap(hdgs)
+        # A straight record is exactly two dense points; with no interior candidates the adaptive
+        # walk can't add stations for *vertical* curvature. Densify under-resolved records (a line
+        # is straight, so linear interpolation is exact) so pitch/bank refinement has a place to go.
+        n_target = max(2, int(math.ceil(total / _SUBSTEP)) + 1)
+        if vertical_angle is not None and len(s_local) < n_target:
+            grid = np.linspace(0.0, total, n_target)
+            xs = np.interp(grid, s_local, xs)
+            ys = np.interp(grid, s_local, ys)
+            hdg_unwrapped = np.interp(grid, s_local, hdg_unwrapped)
+            s_local = grid
+        keep = _adaptive_indices(
+            s_local, hdg_unwrapped, geom.s, max_angle, max_chord_error,
+            min_step, max_step, vertical_angle,
+        )
+        for k, idx in enumerate(keep):
+            # Drop the shared joint with the previous record (its end == this record's start).
+            if frames and k == 0:
+                continue
+            frames.append(
+                _frame(geom.s + float(s_local[idx]), float(xs[idx]), float(ys[idx]),
+                       float(hdg_unwrapped[idx]))
+            )
+    return frames
+
+
+def _adaptive_indices(
+    s_local: np.ndarray,
+    hdg: np.ndarray,
+    s_base: float,
+    max_angle: float,
+    max_chord_error: float,
+    min_step: float,
+    max_step: float,
+    vertical_angle: Callable[[float], float] | None,
+) -> list[int]:
+    """Pick indices into a dense record so consecutive samples respect the adaptive criteria."""
+    n = len(s_local)
+    if n <= 2:
+        return list(range(n))
+    # Per-point local curvature κ ≈ |dψ/ds| (central difference), for the chord-error bound.
+    kappa = np.zeros(n)
+    dpsi = np.gradient(hdg)
+    dl = np.gradient(s_local)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        kappa = np.where(dl > 1e-12, np.abs(dpsi / dl), 0.0)
+    # Cumulative vertical turn (elevation pitch + bank) at each station, if a profile is supplied.
+    if vertical_angle is not None:
+        vangle = np.array([vertical_angle(s_base + float(s)) for s in s_local])
+        cum_vert = np.concatenate([[0.0], np.cumsum(np.abs(np.diff(vangle)))])
+    else:
+        cum_vert = np.zeros(n)
+
+    keep = [0]
+    last = 0
+    k_seg = 0.0
+    for i in range(1, n):
+        k_seg = max(k_seg, float(kappa[i]))
+        seg_len = float(s_local[i] - s_local[last])
+        turn = abs(float(hdg[i] - hdg[last])) + float(cum_vert[i] - cum_vert[last])
+        chord_limit = math.sqrt(8.0 * max_chord_error / k_seg) if k_seg > 1e-9 else math.inf
+        over = turn >= max_angle or seg_len >= max_step or seg_len >= chord_limit
+        if over and seg_len >= min_step:
+            keep.append(i)
+            last = i
+            k_seg = 0.0
+    if keep[-1] != n - 1:
+        keep.append(n - 1)
+    return keep
 
 
 # --- per-record evaluation ------------------------------------------------------------

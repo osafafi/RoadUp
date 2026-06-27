@@ -62,9 +62,17 @@ class ScenarioGenerationWriter:
         road_type = self._road_int_id(road.junction) if road.junction is not None else -1
         sg_road = xodr.Road(self._road_int_id(road.id), planview, lanes,
                             road_type=road_type, name=road.id)
+        self._add_profiles(sg_road, road)
         self._add_road_links(xodr, sg_road, road, model)
         self._attach_userdata(xodr, sg_road, road.user_data)
         return sg_road
+
+    def _add_profiles(self, sg_road: Any, road: Road) -> None:
+        """Emit the vertical (elevation) + lateral (superelevation) profiles, if any."""
+        for e in road.elevation:
+            sg_road.add_elevation(e.s, e.a, e.b, e.c, e.d)
+        for se in road.superelevation:
+            sg_road.add_superelevation(se.s, se.a, se.b, se.c, se.d)
 
     def _build_junction(self, xodr: Any, junction: Any) -> Any:
         sg_junction = xodr.Junction(junction.name, self._road_int_id(junction.id))

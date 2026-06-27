@@ -131,8 +131,13 @@ PRESETS_DIR_ENV = "ROADUP_PRESETS_DIR"
 @dataclass(frozen=True)
 class Config:
     opendrive_version: str = "1.7"        # pinned target
-    default_sampling_step: float = 1.0    # meters
+    default_sampling_step: float = 1.0    # meters (uniform sampler / fixed-grid callers)
     presets_dir: str | None = None        # override presets dir; None = default
+    # Curvature/elevation-adaptive meshing (the default sampling path):
+    adaptive_max_angle_deg: float = 5.0   # tangent turn (heading+pitch+bank) per segment
+    adaptive_chord_tol: float = 0.02      # meters — max chord deviation from the true curve
+    adaptive_min_step: float = 0.5        # meters — floor on station spacing (caps hairpin density)
+    adaptive_max_step: float = 1.0e6      # meters — cap (effectively unbounded: straights stay 2 pts)
 
 def resolve_presets_dir(override: str | Path | None = None) -> Path:
     """Locate presets dir: override -> $ROADUP_PRESETS_DIR -> repo-root presets/."""
@@ -280,6 +285,24 @@ class WidthRecord:
     d: float = 0.0
 
 @dataclass
+class ElevationRecord:
+    """<elevationProfile><elevation> : z(ds) = a + b*ds + c*ds^2 + d*ds^3 from s (ds = s_query - s)."""
+    s: float
+    a: float
+    b: float = 0.0
+    c: float = 0.0
+    d: float = 0.0
+
+@dataclass
+class SuperelevationRecord:
+    """<lateralProfile><superelevation> : bank angle (rad) = a + b*ds + c*ds^2 + d*ds^3 from s."""
+    s: float
+    a: float
+    b: float = 0.0
+    c: float = 0.0
+    d: float = 0.0
+
+@dataclass
 class RoadMark:
     """<lane><roadMark> — geometric/semantic part; material preset rides in user_data."""
     s_offset: float
@@ -327,6 +350,8 @@ class Road:
     length: float = 0.0
     geometry: list[Geometry] = field(default_factory=list)        # plan view reference line
     lane_sections: list[LaneSection] = field(default_factory=list)
+    elevation: list[ElevationRecord] = field(default_factory=list)             # vertical profile (empty ⇒ flat)
+    superelevation: list[SuperelevationRecord] = field(default_factory=list)   # bank profile (empty ⇒ no bank)
     link: RoadLink = field(default_factory=RoadLink)
     junction: str | None = None     # set when this is a connecting road inside a junction
     user_data: dict = field(default_factory=dict)
@@ -472,7 +497,38 @@ def eval_record(geom: Geometry, ds: float) -> Vec3:
 
 def sample_planview(geometry: list[Geometry], step: float) -> list[Frame]:
     """Ordered geometry records -> station frames ~step m apart (true cumulative s, analytic
-    tangents, +t left normal); shared record joints de-duplicated."""
+    tangents, +t left normal); shared record joints de-duplicated. Fixed-grid path."""
+    ...
+
+def sample_planview_adaptive(
+    geometry: list[Geometry], *, max_angle: float, max_chord_error: float,
+    min_step: float, max_step: float,
+    vertical_angle: Callable[[float], float] | None = None,
+) -> list[Frame]:
+    """Curvature-adaptive station picking: emit a frame when the tangent turns by > max_angle or
+    the chord deviates by > max_chord_error, clamped to [min_step, max_step]. `vertical_angle(s)`
+    (elevation pitch + bank) folds vertical turning in, so straights collapse to 2 frames and
+    curves/grades refine. Default meshing path (the uniform `sample_planview` is still available)."""
+    ...
+```
+
+```python
+# opendrive/eval/elevation.py  — vertical + lateral profile evaluation (lifts frames to 3D)
+from collections.abc import Callable, Sequence
+from geometry.sampling import Frame
+from opendrive.model.road import ElevationRecord, Road, SuperelevationRecord
+
+def eval_elevation(records: Sequence[ElevationRecord], s: float) -> float: ...        # z
+def eval_elevation_slope(records: Sequence[ElevationRecord], s: float) -> float: ...  # dz/ds
+def eval_superelevation(records: Sequence[SuperelevationRecord], s: float) -> float: ...  # bank (rad)
+
+def vertical_angle_fn(road: Road) -> Callable[[float], float] | None:
+    """s -> (elevation pitch + bank angle) for adaptive refinement, or None when the road is flat."""
+    ...
+
+def apply_profiles(frames: list[Frame], road: Road) -> list[Frame]:
+    """Lift planar frames to 3D: set z, pitch the tangent by atan(dz/ds), roll the +t normal by the
+    bank angle. Identity (returns the same list) when the road has no elevation/superelevation."""
     ...
 ```
 
@@ -491,8 +547,12 @@ class LaneBoundaries:
     outer: list[Vec3]   # boundary away from the reference line
 
 class Sampler:
-    """Wraps libOpenDRIVE's evaluation; falls back to geometry/ for the pure-Python path."""
-    def __init__(self, model: OpenDriveModel, step: float = 1.0): ...
+    """Wraps libOpenDRIVE's evaluation; falls back to geometry/ for the pure-Python path.
+
+    Adaptive by default (config-driven curvature/elevation refinement); pass adaptive=False for the
+    fixed `step` grid. `reference_frames` applies the road's elevation/superelevation (3D frames)."""
+    def __init__(self, model: OpenDriveModel, step: float = 1.0, *,
+                 config: Config | None = None, adaptive: bool = True): ...
     def reference_frames(self, road_id: str) -> list[Frame]: ...
     def lane_boundaries(self, road_id: str, s0: float, s1: float) -> list[LaneBoundaries]: ...
     def road_surface_polylines(self, road_id: str) -> tuple[list[Vec3], list[Vec3]]:
@@ -629,6 +689,38 @@ class WidthLaw:
 ```
 
 ```python
+# segments/vertical_profile.py  — elevation + superelevation laws (mirror WidthLaw)
+from dataclasses import dataclass
+from opendrive.model.road import ElevationRecord, SuperelevationRecord
+
+@dataclass
+class ElevationLaw:
+    """Editable z-along-s, baked to <elevationProfile><elevation> cubic records."""
+    kind: str   # "constant" | "linear" | "spline"
+    control: list[tuple[float, float]]   # [(s, z), ...]
+    def elevation_at(self, s: float) -> float: ...
+    def bake_records(self) -> list[ElevationRecord]: ...
+    @classmethod
+    def constant(cls, z: float) -> "ElevationLaw": ...
+    @classmethod
+    def grade(cls, length: float, slope: float, z0: float = 0.0) -> "ElevationLaw": ...  # steady grade
+    @classmethod
+    def crest(cls, s0, z0, s1, z1, s2, z2) -> "ElevationLaw": ...   # smooth crest/sag (3 points)
+
+@dataclass
+class SuperelevationLaw:
+    """Editable bank-angle-along-s (rad), baked to <lateralProfile><superelevation> cubic records."""
+    kind: str
+    control: list[tuple[float, float]]   # [(s, angle), ...]
+    def angle_at(self, s: float) -> float: ...
+    def bake_records(self) -> list[SuperelevationRecord]: ...
+    @classmethod
+    def constant(cls, angle: float) -> "SuperelevationLaw": ...
+    @classmethod
+    def ramp(cls, s0, a0, s1, a1) -> "SuperelevationLaw": ...   # linear bank ramp
+```
+
+```python
 # segments/builder.py
 from common.types import RoadType, Vec3
 from geometry.splines import Spline
@@ -641,8 +733,11 @@ class SegmentBuilder:
     def with_lane_count(self, left: int, right: int) -> "SegmentBuilder": ...
     def set_lane_width_law(self, lane_id: int, law: "WidthLaw") -> "SegmentBuilder": ...
     def set_lane_marking(self, lane_id: int, preset_id: str) -> "SegmentBuilder": ...
+    def with_elevation(self, law: "ElevationLaw") -> "SegmentBuilder": ...
+    def with_superelevation(self, law: "SuperelevationLaw") -> "SegmentBuilder": ...
     def build(self, road_id: str) -> Road:
-        """Bake spline -> plan-view geometry, lanes, width records, road marks."""
+        """Bake spline -> plan-view geometry, lanes, width records, road marks, elevation/bank
+        records; round-trip the editable laws (control points) via <userData>."""
         ...
 
 

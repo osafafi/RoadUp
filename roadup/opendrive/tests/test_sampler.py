@@ -20,13 +20,21 @@ def _two_lane_road(geom: Geometry, *, left_w: float = 3.5, right_w: float = 3.5)
     return model
 
 
-def test_reference_frames_on_straight() -> None:
+def test_reference_frames_on_straight_uniform() -> None:
     geom = Geometry(s=0.0, x=0.0, y=0.0, hdg=0.0, length=40.0, type=GeometryType.LINE)
-    frames = Sampler(_two_lane_road(geom), step=5.0).reference_frames("road_001")
-    assert len(frames) == 9                       # 0..40 every 5 m, inclusive
+    frames = Sampler(_two_lane_road(geom), step=5.0, adaptive=False).reference_frames("road_001")
+    assert len(frames) == 9                       # 0..40 every 5 m, inclusive (fixed grid)
     assert math.isclose(frames[-1].s, 40.0)
     assert math.isclose(frames[-1].position[0], 40.0, abs_tol=1e-9)
     assert all(math.isclose(f.position[1], 0.0, abs_tol=1e-9) for f in frames)
+
+
+def test_adaptive_straight_collapses_to_endpoints() -> None:
+    # The default (adaptive) sampler needs no interior samples on a straight: 2 frames -> 1 quad.
+    geom = Geometry(s=0.0, x=0.0, y=0.0, hdg=0.0, length=40.0, type=GeometryType.LINE)
+    frames = Sampler(_two_lane_road(geom)).reference_frames("road_001")
+    assert len(frames) == 2
+    assert math.isclose(frames[0].s, 0.0) and math.isclose(frames[-1].s, 40.0)
 
 
 def test_arc_frames_curve_left() -> None:

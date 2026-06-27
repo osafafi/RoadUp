@@ -1,6 +1,6 @@
 # RoadUp — Build Status
 
-> **Current stage: Stage 4 — Intersections (connectivity + connection splines + junctions)  ·  ✅ complete**
+> **Current stage: Stage 4.5 — Elevation, banking & curvature-adaptive sampling  ·  ✅ complete**
 > Last updated: 2026-06-27
 
 **What works right now:** you can **author a junction** where several roads meet —
@@ -19,7 +19,18 @@ bake it** via `SegmentBuilder` into plan-view geometry + lanes + width laws + ro
 write **OpenDRIVE 1.7 `.xodr`**, read it back, and sample reference lines + lane boundaries. The
 **showcase golden file** now includes a 5-junction stress gallery (classic 4-way, a complex skewed
 4-way with unequal lane counts + mismatched widths, a 2-road bend, a 3-way, and a 5-road star).
-**158 tests pass, 0 fail; 12 remain skipped** for not-yet-built modules (Phases 5–7).
+**Stage 4.5 adds road elevation + banking and curvature-adaptive meshing** (see below).
+**179 tests pass, 0 fail; 12 remain skipped** for not-yet-built modules (Phases 5–7).
+
+> **Stage 4.5 (elevation, banking, adaptive sampling):** roads carry an editable **vertical profile**
+> (`<elevationProfile>`, `z` along `s`) and **superelevation** (`<lateralProfile>`, bank angle along
+> `s`), authored as 1D laws (`segments.vertical_profile.ElevationLaw` / `SuperelevationLaw`, mirroring
+> `WidthLaw`) and round-tripped via `<userData>`. `opendrive.eval.elevation.apply_profiles` lifts the
+> planar sampled frames into 3D (z + pitched tangent + bank-rolled normal); lateral offsetting and
+> meshing then get correct elevation/banking for free. Meshing is now **curvature-adaptive** by
+> default (`sample_planview_adaptive`): station density follows the tangent's turn (heading + pitch +
+> bank) under an angle/chord threshold, so a straight collapses to two triangles while curves and
+> grades densify. `<shape>` (lateral crown) and junction elevation-continuity are deferred.
 
 > **Backend note (Stage 2 decision):** read + geometry-eval are **pure-Python** (no native
 > libOpenDRIVE). The spiral/clothoid is evaluated by numeric integration; line/arc/paramPoly3 are
@@ -42,6 +53,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | **2. OpenDRIVE I/O** | `opendrive/io` (writer ✅, userdata ✅, reader ✅), `opendrive/eval` ✅ | ✅ |
 | **3. Authoring** | `segments` ✅, `markings` ✅, `network` (graph+linkage ✅; spatial/snapping → Phase 6) | ✅ |
 | **4. Intersections** | `intersections/{connectivity,connection_spline,junction_builder,surface}` ✅; writer/reader `<junction>` ✅ | ✅ |
+| **4.5 Elevation & adaptive mesh** | `opendrive/eval/elevation`, `segments/vertical_profile`, adaptive `planview`; writer/reader profiles ✅ | ✅ |
 | **5. Output & tooling** | `usd`, `tooling` | ⬜ |
 | **6. Omniverse app** | `app/exts/roadup.tool` | ⬜ |
 | **7. Optional acceleration** | `blender` | ⬜ |
@@ -115,13 +127,37 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 > points) round-trips via `<userData>`; sampled records stay canonical.
 > `tests/integration/test_intersection_editing.py` is the gate.
 
+### Phase 4.5 — Elevation, banking & curvature-adaptive sampling ✅
+
+| Module | Status | Notes |
+|---|---|---|
+| `opendrive/model/road` | ✅ | `ElevationRecord` + `SuperelevationRecord` (cubic in `ds`); `Road.elevation` / `Road.superelevation` (empty ⇒ flat ⇒ unchanged output) |
+| `opendrive/eval/elevation` | ✅ | `eval_elevation`/`_slope`/`eval_superelevation`; `apply_profiles` lifts frames to 3D (z + pitched tangent + Rodrigues bank-rolled normal); `vertical_angle_fn` feeds adaptive refinement; identity when flat |
+| `opendrive/eval/planview` | ✅ | `sample_planview_adaptive`: angle-threshold + chord-error + min/max-step station picking; folds in `vertical_angle` (pitch+bank); densifies under-resolved straights so vertical curves refine. Uniform `sample_planview` retained |
+| `opendrive/eval/sampler` | ✅ | adaptive by default (`adaptive=True`, `config`-driven); `adaptive=False` keeps the fixed grid; `reference_frames` applies profiles after sampling |
+| `segments/vertical_profile` | ✅ | `ElevationLaw` / `SuperelevationLaw` (constant/linear/spline → records), mirroring `WidthLaw`; constructors `grade`/`crest`/`ramp` |
+| `segments/builder` | ✅ | `with_elevation` / `with_superelevation`; bakes records + round-trips the laws in `<userData>` |
+| `opendrive/io/writer` | ✅ | emits `<elevationProfile>` / `<lateralProfile>` via `scenariogeneration` `add_elevation`/`add_superelevation` (skipped when empty) |
+| `opendrive/io/reader` | ✅ | parses both profiles back (was silently dropped) |
+| `common/config` | ✅ | adaptive knobs: `adaptive_max_angle_deg`, `adaptive_chord_tol`, `adaptive_min_step`, `adaptive_max_step` |
+
+> **Stage 4.5 design:** OpenDRIVE separates vertical (`z(s)`) from lateral (bank `α(s)`) profiles, so
+> RoadUp authors each as its own 1D law (not from the reference-line spline z) and bakes to cubic
+> records — same pattern as lane width laws, so it round-trips losslessly via `<userData>` and is
+> ready for viewport elevation handles (Stage 6). Sampling moved from a fixed step to a
+> curvature-adaptive station picker driven by an **angle threshold** (heading + elevation pitch +
+> bank), so a flat straight is two triangles and curves/grades refine only where needed.
+> `tests/integration/test_xodr_roundtrip.py` (profiles survive) + `test_mesh_export.py` (adaptive
+> counts, 3D mesh) are the gates. Deferred: `<lateralProfile><shape>` (lane crown) and junction
+> elevation continuity.
+
 ---
 
 ## See it / verify locally
 
 ```bash
 . .venv/Scripts/activate                 # Python 3.12 (see README "Requirements")
-pytest -q                                # 158 passed, 12 skipped
+pytest -q                                # 179 passed, 12 skipped
 
 # Generate .xodr files to open in an OpenDRIVE visualizer (-> examples/out/, gitignored):
 python examples/generate_xodr_samples.py
@@ -162,6 +198,17 @@ The 12 skips are placeholder tests for modules in Phases 5–7 (plus `network/sp
    `update_road` / `update_junction`; show the resulting `.usda`.
 3. `tooling/{manipulators,hover,commands,controller,preview}` — headless interaction model (no
    `omni.*`): handles, hover policy, undoable commands, the `RoadToolController`.
+
+> When the USD stage is generated, it consumes the now-3D sampled frames directly, so road surfaces,
+> lane strips and junction patches inherit elevation + banking with no extra work in `usd/`.
+
+### Superseded — Stage 4.5 (elevation, banking, adaptive mesh) ✅ done
+
+1. `opendrive/model/road` — `ElevationRecord` / `SuperelevationRecord` + `Road` fields.
+2. `opendrive/eval/elevation` — profile eval + `apply_profiles` (3D frames) + `vertical_angle_fn`.
+3. `opendrive/eval/planview` — `sample_planview_adaptive` (angle/chord-driven); `sampler` adaptive default.
+4. `segments/vertical_profile` + `segments/builder` — editable laws, baked + `<userData>` round-trip.
+5. Writer/reader `<elevationProfile>` / `<lateralProfile>`; showcase gains a climbing, banked curve.
 
 ### Superseded — Stage 4 (intersections) ✅ done
 

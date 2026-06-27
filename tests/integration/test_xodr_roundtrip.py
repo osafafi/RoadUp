@@ -43,6 +43,18 @@ def test_userdata_survives_roundtrip(tmp_path: Path) -> None:
         assert restored.roads[road_id].user_data == road.user_data
 
 
+def test_elevation_and_banking_survive_roundtrip(tmp_path: Path) -> None:
+    """The climbing, banked curve keeps its vertical + lateral profiles; flat roads stay flat."""
+    original, restored = _roundtrip(tmp_path)
+    banked = restored.roads["road_006"]
+    assert banked.elevation == original.roads["road_006"].elevation
+    assert banked.superelevation == original.roads["road_006"].superelevation
+    assert banked.elevation and banked.superelevation                 # non-trivial profiles
+    # A flat road emits no profile records at all (byte-identical to the pre-4.5 output).
+    assert restored.roads["road_001"].elevation == []
+    assert restored.roads["road_001"].superelevation == []
+
+
 def test_restored_model_is_samplable(tmp_path: Path) -> None:
     """The read-back model feeds the sampler — frames advance and lane boundaries exist."""
     _, restored = _roundtrip(tmp_path)

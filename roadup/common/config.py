@@ -23,8 +23,18 @@ class Config:
     """
 
     opendrive_version: str = "1.7"        # pinned target (see ARCHITECTURE.md §17)
-    default_sampling_step: float = 1.0    # meters
+    default_sampling_step: float = 1.0    # meters (uniform sampler / fixed-grid callers)
     presets_dir: str | None = None        # override the presets directory; None = default
+
+    # Curvature/elevation-adaptive mesh sampling (the default sampling path). A station is emitted
+    # when the reference frame's tangent (heading + elevation pitch + bank) turns by more than
+    # ``adaptive_max_angle_deg``, or the chord error would exceed ``adaptive_chord_tol``, bounded
+    # by a min/max station spacing. A straight collapses to its two endpoints (2 triangles).
+    adaptive_max_angle_deg: float = 5.0   # degrees of tangent turn per segment
+    adaptive_chord_tol: float = 0.02      # meters — max chord deviation from the true curve
+    adaptive_min_step: float = 0.5        # meters — floor on station spacing (caps hairpin density)
+    adaptive_max_step: float = 1.0e6      # meters — cap on spacing (effectively unbounded; keeps
+    #                                       straights at 2 samples while still finite)
 
 
 def resolve_presets_dir(override: str | Path | None = None) -> Path:

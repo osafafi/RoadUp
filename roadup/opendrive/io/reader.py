@@ -20,6 +20,7 @@ from roadup.opendrive.io.userdata import USERDATA_NS, decode
 from roadup.opendrive.model.junction import Connection, Junction, LaneLinkPair
 from roadup.opendrive.model.network import Header, OpenDriveModel
 from roadup.opendrive.model.road import (
+    ElevationRecord,
     Geometry,
     Lane,
     LaneLink,
@@ -27,6 +28,7 @@ from roadup.opendrive.model.road import (
     Road,
     RoadLink,
     RoadMark,
+    SuperelevationRecord,
     WidthRecord,
 )
 
@@ -87,6 +89,8 @@ class LxmlFallbackReader:
             length=float(el.get("length", "0.0")),
             geometry=self._parse_geometry(el),
             lane_sections=self._parse_lane_sections(el),
+            elevation=self._parse_elevation(el),
+            superelevation=self._parse_superelevation(el),
             link=self._parse_road_link(el.find("link")),
             junction=self._junction_id(el.get("junction", "-1")),
             user_data=self._userdata(el),
@@ -174,6 +178,31 @@ class LxmlFallbackReader:
                 )
             )
         return records
+
+    # --- elevation / lateral profiles -------------------------------------------------
+    def _parse_elevation(self, road_el: etree._Element) -> list[ElevationRecord]:
+        return [
+            ElevationRecord(
+                s=float(e.get("s", "0.0")),
+                a=float(e.get("a", "0.0")),
+                b=float(e.get("b", "0.0")),
+                c=float(e.get("c", "0.0")),
+                d=float(e.get("d", "0.0")),
+            )
+            for e in road_el.findall("elevationProfile/elevation")
+        ]
+
+    def _parse_superelevation(self, road_el: etree._Element) -> list[SuperelevationRecord]:
+        return [
+            SuperelevationRecord(
+                s=float(e.get("s", "0.0")),
+                a=float(e.get("a", "0.0")),
+                b=float(e.get("b", "0.0")),
+                c=float(e.get("c", "0.0")),
+                d=float(e.get("d", "0.0")),
+            )
+            for e in road_el.findall("lateralProfile/superelevation")
+        ]
 
     def _geometry_params(self, child: etree._Element) -> dict[str, float]:
         if child.tag == GeometryType.ARC.value:
