@@ -25,6 +25,9 @@ env/
 .coverage
 htmlcov/
 
+# Generated pxr type stubs (reproducible via tools/gen_pxr_stubs.py; version-specific)
+/typings/
+
 # Editors / OS
 .vscode/
 .idea/

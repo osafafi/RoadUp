@@ -917,9 +917,16 @@ ATTR_CONTROL_POINT_ID = "roadup:controlPointId"
 
 def road_prim_path(road_id: str) -> str: ...           # "/RoadNetwork/Roads/Road_001"
 def junction_prim_path(junction_id: str) -> str: ...
+def road_surface_path(road_id: str) -> str: ...        # ".../Road_001/Surface"
+def junction_surface_path(junction_id: str) -> str: ...
+def lane_token(lane_id: int) -> str: ...               # -1 -> "LaneN1", 2 -> "LaneP2" (no '-')
+def lane_marking_prim_path(road_id, lane_id, index=0) -> str: ...   # ".../Markings/LaneN1"
+def centerline_rail_path(road_id: str) -> str: ...     # ".../Rails/Centerline"  (guide curve)
+def lane_rail_path(road_id, lane_id) -> str: ...       # ".../Rails/LaneN1_Edge" (guide curve)
 def resolve_prim(prim) -> dict:
-    """Read the roadup:* tags off a hit prim -> {kind, id} for the tooling layer."""
+    """Read the roadup:* tags off a hit prim -> {kind, id, [lane_id], [control_point_id]}."""
     ...
+# Prim paths are derived from ids and STABLE — the cross-layer contract a *.scene.usda references.
 ```
 
 ```python
@@ -940,16 +947,22 @@ from opendrive.eval.sampler import Sampler
 from geometry.mesh import MeshData
 
 class StageGenerator:
-    """Build/update the USD viewport stage from the model + sampler. Incremental by road/junction."""
+    """Build/update the USD viewport stage from the model + sampler. Incremental by road/junction.
+    Output is the *generated layer*: sublayer-ready, stable id-keyed paths, guide-curve Rails."""
     def __init__(self, model: OpenDriveModel, sampler: Sampler, stage=None): ...
-    def build_all(self) -> "object":  # returns Usd.Stage
+    def build_all(self) -> "object":  # Usd.Stage (metersPerUnit=1, Z-up, defaultPrim=/RoadNetwork)
         ...
     def update_road(self, road_id: str) -> None:
-        """Regenerate only this road's prims (surface, marking strips), preserving paths/ids."""
+        """Regenerate this road's prims (surface, marking strips, Rails), preserving paths/ids."""
         ...
     def update_junction(self, junction_id: str) -> None: ...
     def write_marking_strip(self, mesh: MeshData, road_id: str, lane_id: int, preset_id: str): ...
+    def export(self, path: str) -> None: ...   # write generated layer (a *.scene.usda sublayers it)
+    def to_usda(self) -> str: ...              # the generated layer as .usda (auditing)
 ```
+
+The road/lane **Rails** are linear `UsdGeom.BasisCurves` with `purpose=guide`, tagged with
+`roadup:roadId`/`roadup:laneId` — the rails scene scatter/array rides (see ARCHITECTURE.md S9.1).
 
 ---
 
@@ -1022,10 +1035,15 @@ from opendrive.model.network import OpenDriveModel
 
 class RoadToolController:
     """UI-agnostic interaction controller. The Kit extension drives these methods."""
+    EDIT_CONTEXTS = ("ROAD", "SCENE")   # the "enter road editing tool" seam (ARCHITECTURE.md S9.1)
     TOOL_MODES = ("DRAW_ROAD", "EDIT_SPLINE", "EDIT_INTERSECTION", "EDIT_LANES", "INSPECT")
 
-    def __init__(self, model: OpenDriveModel): ...
+    def __init__(self, model: OpenDriveModel, stage: "StageGenerator | None" = None): ...
+    def set_context(self, context: str) -> None: ...   # ROAD edits the model; SCENE = reserved no-op
     def set_mode(self, mode: str) -> None: ...
+    def execute(self, command) -> None: ...            # run a command through the undo stack
+    def undo(self) -> None: ...
+    def redo(self) -> None: ...
 
     # input (already hit-tested by the app; ids resolved via usd.mapping)
     def on_hover(self, hit: dict | None) -> "ManipulatorModel":

@@ -1,6 +1,6 @@
 # RoadUp — Build Status
 
-> **Current stage: Stage 4.5 — Elevation, banking & curvature-adaptive sampling  ·  ✅ complete**
+> **Current stage: Stage 5 — USD output & headless tooling  ·  ✅ complete**
 > Last updated: 2026-06-27
 
 **What works right now:** you can **author a junction** where several roads meet —
@@ -20,7 +20,10 @@ write **OpenDRIVE 1.7 `.xodr`**, read it back, and sample reference lines + lane
 **showcase golden file** now includes a 5-junction stress gallery (classic 4-way, a complex skewed
 4-way with unequal lane counts + mismatched widths, a 2-road bend, a 3-way, and a 5-road star).
 **Stage 4.5 adds road elevation + banking and curvature-adaptive meshing** (see below).
-**179 tests pass, 0 fail; 12 remain skipped** for not-yet-built modules (Phases 5–7).
+**Stage 5 generates the USD viewport stage and the headless tooling layer** (see below).
+**223 tests pass, 0 fail; 3 remain skipped** for not-yet-built modules (`blender` → Phase 7;
+`network/spatial` + `network/snapping` → Phase 6). The USD tests need `pxr` and `importorskip` it,
+so they run where USD is installed and skip cleanly in pure-Python CI.
 
 > **Stage 4.5 (elevation, banking, adaptive sampling):** roads carry an editable **vertical profile**
 > (`<elevationProfile>`, `z` along `s`) and **superelevation** (`<lateralProfile>`, bank angle along
@@ -31,6 +34,19 @@ write **OpenDRIVE 1.7 `.xodr`**, read it back, and sample reference lines + lane
 > default (`sample_planview_adaptive`): station density follows the tangent's turn (heading + pitch +
 > bank) under an angle/chord threshold, so a straight collapses to two triangles while curves and
 > grades densify. `<shape>` (lateral crown) and junction elevation-continuity are deferred.
+
+> **Stage 5 (USD output & headless tooling):** `usd.StageGenerator` builds the viewport stage from
+> the model + `Sampler` — road-surface ribbons, lane-edge marking strips, and junction surfaces as
+> `UsdGeom.Mesh`, plus per-road **Rails** (centerline + lane-edge `UsdGeom.BasisCurves`,
+> `purpose=guide`) tagged with `roadup:*` ids. Every prim sits at a **stable id-keyed path**
+> (`usd.mapping`), materials dedup from marking presets (`usd.MaterialLibrary`), and
+> `update_road`/`update_junction` regenerate non-destructively. The stage is the **generated layer**:
+> sublayer-ready so a `*.scene.usda` can sublayer it and scatter/array along the rails (two-source
+> model — ARCHITECTURE.md §9.1). The headless `tooling` layer (no `omni.*`) implements the
+> `RoadToolController` (with the `ROAD`/`SCENE` edit-context seam), `HoverModel`, `ManipulatorModel`,
+> the undoable `CommandStack` + commands (`MoveControlPoint`, `AddControlPoint`, `SetLaneCount`,
+> `SetLaneWidthLaw`, `SetLaneMarking`, `ConnectSegments`), and `PreviewGenerator`. The Kit extension,
+> the scatter/array tools, and the toggle UI are Phase 6+.
 
 > **Backend note (Stage 2 decision):** read + geometry-eval are **pure-Python** (no native
 > libOpenDRIVE). The spiral/clothoid is evaluated by numeric integration; line/arc/paramPoly3 are
@@ -54,7 +70,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | **3. Authoring** | `segments` ✅, `markings` ✅, `network` (graph+linkage ✅; spatial/snapping → Phase 6) | ✅ |
 | **4. Intersections** | `intersections/{connectivity,connection_spline,junction_builder,surface}` ✅; writer/reader `<junction>` ✅ | ✅ |
 | **4.5 Elevation & adaptive mesh** | `opendrive/eval/elevation`, `segments/vertical_profile`, adaptive `planview`; writer/reader profiles ✅ | ✅ |
-| **5. Output & tooling** | `usd`, `tooling` | ⬜ |
+| **5. Output & tooling** | `usd` ✅ (mapping/materials/stage + guide-curve Rails), `tooling` ✅ (controller/hover/manipulators/commands/preview + `ROAD`/`SCENE` seam) | ✅ |
 | **6. Omniverse app** | `app/exts/roadup.tool` | ⬜ |
 | **7. Optional acceleration** | `blender` | ⬜ |
 
@@ -151,13 +167,33 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 > counts, 3D mesh) are the gates. Deferred: `<lateralProfile><shape>` (lane crown) and junction
 > elevation continuity.
 
+### Phase 5 — USD output & headless tooling ✅
+
+| Module | Status | Notes |
+|---|---|---|
+| `usd/mapping` | ✅ | pure-Python (no `pxr`): stable id-keyed prim paths + rail/marking helpers; `resolve_prim` reads `roadup:*` tags |
+| `usd/materials` | ✅ | `MaterialLibrary`: UsdPreviewSurface from `MaterialParams`, dedup by `material_key`; `asphalt()` default |
+| `usd/stage` | ✅ | `StageGenerator`: surfaces + marking strips + junction surfaces as `Mesh`; **guide-curve Rails** (centerline + lane edges); incremental `update_road`/`update_junction`; `export`/`to_usda` |
+| `tooling/manipulators` | ✅ | `Handle` + `ManipulatorModel.set_handles` (keeps live selection/hover) |
+| `tooling/hover` | ✅ | `HoverModel`: road/junction → control-point handles; selection-pinned merge |
+| `tooling/commands` | ✅ | `CommandStack` (undo/redo) + `Move`/`Add` control point, `SetLaneCount`/`WidthLaw`/`Marking`, `ConnectSegments` |
+| `tooling/controller` | ✅ | `RoadToolController` + `ROAD`/`SCENE` `EDIT_CONTEXTS` seam; drag→`MoveControlPoint`→scoped regen |
+| `tooling/preview` | ✅ | `PreviewGenerator`: low-res centerline guide curve on a throwaway stage |
+
+> **Stage 5 design:** USD is the **generated layer** — derived, regenerated, never hand-edited, with
+> stable id-keyed paths so a `*.scene.usda` can **sublayer** it and author the scene beside it
+> (scatter/props/env), riding the guide-curve **Rails**. One-way dependency, no sync (ARCHITECTURE.md
+> §9.1). `pxr` is imported lazily and the USD tests `importorskip` it, keeping the core pure-Python.
+> `tests/integration/test_usd_generation.py` is the gate: tags, guide rails, path stability across
+> regeneration, and scene-sublayer composition.
+
 ---
 
 ## See it / verify locally
 
 ```bash
 . .venv/Scripts/activate                 # Python 3.12 (see README "Requirements")
-pytest -q                                # 179 passed, 12 skipped
+pytest -q                                # 223 passed, 3 skipped (USD tests need `pxr`; importorskip otherwise)
 
 # Generate .xodr files to open in an OpenDRIVE visualizer (-> examples/out/, gitignored):
 python examples/generate_xodr_samples.py
@@ -184,23 +220,35 @@ pytest tests/integration/test_intersection_editing.py -s # build junction -> edi
 > `tests/integration/test_xodr_showcase.py` asserts the variety; `test_xodr_roundtrip.py` proves the
 > write→read inverse; `test_segment_creation.py` is the author-side bake-correctness gate.
 
-The 12 skips are placeholder tests for modules in Phases 5–7 (plus `network/spatial` +
-`network/snapping`, deferred to Phase 6); each is unskipped and implemented as its module is built.
+The 3 skips are placeholder tests for `blender` (Phase 7) and `network/spatial` + `network/snapping`
+(deferred to Phase 6); each is unskipped and implemented as its module is built. The USD unit +
+integration tests `importorskip("pxr")`, so they run where USD is installed and skip in pure-Python CI.
 
 ---
 
-## Next stage (Stage 5 — output & tooling: `usd`, `tooling`)
+## Next stage (Stage 6 — Omniverse Kit app: `app/exts/roadup.tool`)
 
-1. `usd/mapping` + `usd/materials` — prim-path helpers + `roadup:*` id tags; `MaterialLibrary` from
-   marking `MaterialParams` (dedup by `material_key`). Consult the **usd-viewport** skill / usd-mcp.
-2. `usd/stage` — `StageGenerator`: build the viewport stage from `OpenDriveModel` + `Sampler` (road
-   surfaces, lane-edge marking strips, junction surfaces via `intersections.surface`); incremental
-   `update_road` / `update_junction`; show the resulting `.usda`.
-3. `tooling/{manipulators,hover,commands,controller,preview}` — headless interaction model (no
-   `omni.*`): handles, hover policy, undoable commands, the `RoadToolController`.
+The headless `usd` + `tooling` layers are done; Stage 6 is the **only** place `omni.*`/`carb.*` are
+imported. It binds the viewport to the controller and renders its state — no new authoring logic.
 
-> When the USD stage is generated, it consumes the now-3D sampled frames directly, so road surfaces,
-> lane strips and junction patches inherit elevation + banking with no extra work in `usd/`.
+**Host app (decided — ARCHITECTURE.md §10).** RoadUp ships the **extension**, not the app. Generate
+the runnable host **fresh** from `kit-app-template` (`repo template new` → **`kit_base_editor`**,
+Kit 110.1) in a **separate sibling repo** — don't vendor the template into this repo, don't reuse the
+old project's app shell. The host adds `app/exts/` to its ext search path, makes `roadup` importable
+by Kit's Python, and enables `roadup.tool`. Step 0 of this stage is creating that host.
+
+1. `extension.py` — `omni.ext.IExt`: load/attach the `OpenDriveModel`, build `StageGenerator`, create
+   `RoadToolController(model, stage)`, wire input/render, register panels. Consult **kit-dev-mcp**.
+2. `viewport_input.py` — cursor move/click/drag → hit-test → `usd.mapping.resolve_prim` → forward to
+   the controller; render `controller.manipulators()` via `manipulator_view.py` (`omni.ui.scene`).
+3. `panels.py` — `omni.ui` panels (lane count, marking/road-type presets) issuing tooling commands;
+   add the **ROAD / SCENE toggle** that drives `controller.set_context`. Consult **ui-kit-mcp**.
+
+Then the **scene-authoring** stage builds the scatter/array tools that ride the guide-curve Rails
+inside the `*.scene.usda` layer (ARCHITECTURE.md §9.1) — `PointInstancer` along a rail, etc.
+
+> Stage 5 already consumes the 3D sampled frames directly, so road surfaces, lane strips and junction
+> patches inherit elevation + banking with no extra work in `usd/`; the rails carry that 3D shape too.
 
 ### Superseded — Stage 4.5 (elevation, banking, adaptive mesh) ✅ done
 

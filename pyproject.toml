@@ -26,8 +26,10 @@ read = [
     # Candidates: a libOpenDRIVE pybind wheel, "esmini", or pure-Python "pyxodr".
 ]
 # USD viewport output. Inside Omniverse, Kit provides USD; standalone use needs usd-core.
+# Pinned to OpenUSD 25.11 to match Kit SDK 110.1's bundled nv_usd (see README "Requirements").
+# Dev/test/CI convenience only: in Kit, `import pxr` resolves to Kit's own USD, not this wheel.
 usd = [
-    "usd-core>=23.11",
+    "usd-core==25.11.*",
 ]
 # Optional accelerators for spatial/2D ops.
 accel = [

@@ -23,4 +23,16 @@ class ManipulatorModel:
     hovered: str | None = None
 
     def set_handles(self, handles: list[Handle]) -> None:
-        raise NotImplementedError
+        """Replace the drawn handle set (selection/hover ids are kept if still present)."""
+        self.visible = list(handles)
+        ids = {h.id for h in self.visible}
+        if self.selected not in ids:
+            self.selected = None
+        if self.hovered not in ids:
+            self.hovered = None
+
+    def handle(self, handle_id: str) -> Handle | None:
+        for h in self.visible:
+            if h.id == handle_id:
+                return h
+        return None
