@@ -1,15 +1,14 @@
 """Generate the USD viewport stage from the showcase model — the Phase 5 output layer.
 
-This drives :class:`roadup.usd.stage.StageGenerator` (the real 3D pipeline, unlike the
-``.obj`` validation harness in ``generate_obj_meshes.py``): it samples the OpenDRIVE model and
-writes id-tagged ``UsdGeom.Mesh`` surfaces / marking strips / junction patches plus the guide-curve
-**Rails**, all under stable ``/RoadNetwork`` paths.
+This drives :class:`roadup.usd.stage.StageGenerator` (the real 3D pipeline): it samples the
+OpenDRIVE model and writes id-tagged ``UsdGeom.Mesh`` surfaces / marking strips / junction patches
+plus the guide-curve **Rails**, all under stable ``/RoadNetwork`` paths.
 
 Run from the repo root (with the venv active, ``pxr`` installed)::
 
     python examples/generate_usd.py
 
-Writes into ``examples/out/`` (gitignored), beside the ``.xodr`` / ``.obj`` files:
+Writes into ``examples/out/`` (gitignored), beside the ``.xodr`` files:
 
 * ``showcase.usdc``      — the whole network in one **crate** (binary) layer.
 * ``NN_<name>.usdc``     — each road on its own.
@@ -25,24 +24,30 @@ matching the ``.xodr`` truth and Omniverse.
 """
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
 from examples.showcase import build_showcase_model, showcase_roads
+from roadup.common.config import Config, load_config
 from roadup.opendrive.eval.sampler import Sampler
 from roadup.opendrive.model.network import OpenDriveModel
 from roadup.usd.stage import StageGenerator
 
 OUT_DIR = Path(__file__).parent / "out"
 
+# Tune generation by pointing this at a YAML of Config knobs (see config.example.yaml at the repo
+# root): ``ROADUP_CONFIG=config.example.yaml python examples/generate_usd.py``. Unset = defaults.
+_CONFIG = load_config(os.environ.get("ROADUP_CONFIG"))
+
 
 def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
 
 
-def generate(model: OpenDriveModel, path: Path) -> int:
+def generate(model: OpenDriveModel, path: Path, config: Config) -> int:
     """Build the stage for ``model`` and export it to ``path`` (``.usdc`` crate). Returns prim count."""
-    generator = StageGenerator(model, Sampler(model))
+    generator = StageGenerator(model, Sampler(model, config=config))
     stage = generator.build_all()
     generator.export(str(path))
     return sum(1 for _ in stage.Traverse())
@@ -53,7 +58,7 @@ def main() -> None:
 
     combined = build_showcase_model()
     combined_path = OUT_DIR / "showcase.usdc"
-    prims = generate(combined, combined_path)
+    prims = generate(combined, combined_path, _CONFIG)
     print(f"wrote {combined_path}  "
           f"({len(combined.roads)} roads, {len(combined.junctions)} junctions, {prims} prims)")
 
@@ -63,7 +68,7 @@ def main() -> None:
         single.add_road(road)
         note = road.user_data.get("note", road.id)
         path = OUT_DIR / f"{i:02d}_{_slug(note)}.usdc"
-        prims = generate(single, path)
+        prims = generate(single, path, _CONFIG)
         print(f"wrote {path}  ({note}, {prims} prims)")
 
 

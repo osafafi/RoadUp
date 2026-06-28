@@ -49,3 +49,20 @@ def test_load_config_from_yaml(tmp_path: Path) -> None:
     cfg = load_config(str(cfg_file))
     assert cfg.default_sampling_step == 0.5
     assert cfg.opendrive_version == "1.7"  # untouched default
+
+
+def test_generation_knob_defaults() -> None:
+    cfg = Config()
+    assert cfg.turn_straight_max_deg == 45.0
+    assert cfg.turn_u_turn_min_deg == 135.0
+    assert cfg.connecting_lane_default_width == 3.5
+    assert cfg.junction_cap_interior_spacing == 3.0
+    assert cfg.junction_corner_sampling_step is None
+
+
+def test_example_config_yaml_loads_and_overrides() -> None:
+    # The shipped example must stay in sync with the Config fields (every key recognised).
+    example = Path(__file__).resolve().parents[3] / "config.example.yaml"
+    cfg = load_config(str(example))
+    assert cfg.junction_cap_interior_spacing == 3.0
+    assert cfg.turn_straight_max_deg == 45.0

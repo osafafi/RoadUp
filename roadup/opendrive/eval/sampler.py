@@ -35,15 +35,31 @@ class Sampler:
     def __init__(
         self,
         model: OpenDriveModel,
-        step: float = 1.0,
+        step: float | None = None,
         *,
         config: Config | None = None,
         adaptive: bool = True,
     ) -> None:
         self._model = model
-        self._step = step
         self._config = config or Config()
+        # `step` defaults to the configured sampling step so one Config drives the whole pipeline.
+        self._step = self._config.default_sampling_step if step is None else step
         self._adaptive = adaptive
+
+    @property
+    def model(self) -> OpenDriveModel:
+        """The model being sampled (read-only; consumers that need road/junction lookups)."""
+        return self._model
+
+    @property
+    def config(self) -> Config:
+        """The active config (read-only; downstream builders inherit it from the sampler)."""
+        return self._config
+
+    @property
+    def step(self) -> float:
+        """Nominal sampling step in metres (uniform path / corner sampling default)."""
+        return self._step
 
     def reference_frames(self, road_id: str) -> list[Frame]:
         road = self._model.get_road(road_id)

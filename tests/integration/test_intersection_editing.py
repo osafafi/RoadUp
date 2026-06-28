@@ -118,3 +118,27 @@ def test_junction_write_read_round_trip(tmp_path: Path) -> None:
     edited_road_id = next(c.connecting_road for c in oj.connections if c.id == conn_id)
     assert restored.get_road(edited_road_id).junction == "junction_001"
     assert restored.get_road(edited_road_id).user_data == model.get_road(edited_road_id).user_data
+
+
+def test_edited_junction_boundary_corner_round_trips(tmp_path: Path) -> None:
+    model, _builder, junction = _four_way()
+    sampler = Sampler(model)
+    surface = IntersectionSurface(sampler)
+
+    # Drag a corner fillet handle and persist it onto the junction's <userData>.
+    boundary = surface.boundary(junction)
+    cid = boundary.corners[0].id
+    h = boundary.corners[0].out_handle
+    boundary.corners[0].move_out_handle((h[0] + 5.0, h[1] + 2.0, h[2]))
+    surface.commit_boundary(junction, boundary)
+
+    out = tmp_path / "junction_boundary.xodr"
+    ScenarioGenerationWriter().write(model, str(out))
+    restored = LxmlFallbackReader().parse(str(out))
+
+    # The edited fillet survives write -> read and reshapes the regenerated surface identically.
+    rj = restored.junctions["junction_001"]
+    assert rj.user_data == junction.user_data
+    rb = IntersectionSurface(Sampler(restored)).boundary(rj)
+    assert rb.corner(cid).edited
+    assert rb.corner(cid).out_handle == boundary.corner(cid).out_handle

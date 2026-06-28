@@ -1,0 +1,48 @@
+# RoadUp procedural-generation config — copy, edit, and load to tune generation.
+#
+# Every key here maps 1:1 to a field on `roadup.common.config.Config`. Load it with:
+#
+#     from roadup.common.config import load_config
+#     cfg = load_config("config.example.yaml")
+#     sampler = Sampler(model, config=cfg)          # the whole pipeline inherits it via the sampler
+#     StageGenerator(model, sampler).build_all()    # USD surfaces, junction caps, etc. use `cfg`
+#
+# Or point the example scripts at it:  ROADUP_CONFIG=config.example.yaml python examples/generate_usd.py
+#
+# Omit any key to keep its default (shown below). Values are SI: metres, degrees. These are the
+# *global generation knobs*. Per-road-type values (lane widths, marking colours/patterns, design
+# speeds) live in the editable presets under presets/*.yaml — not here.
+
+opendrive_version: "1.7"          # pinned OpenDRIVE target; don't change unless retargeting.
+default_sampling_step: 1.0        # m. Nominal sampling step (uniform sampler + the default corner
+                                  # step). Lower = denser everywhere.
+
+# --- Curvature/elevation-adaptive mesh sampling -------------------------------------------------
+# How finely curved roads are tessellated. A station is emitted when the tangent (heading + pitch +
+# bank) turns past max_angle, OR the chord error would exceed chord_tol, clamped to [min_step,
+# max_step]. Straights collapse to 2 points; curves densify. Smaller = smoother but heavier.
+adaptive_max_angle_deg: 5.0       # deg of tangent turn per segment. 2.0 = silky curves; 10.0 = faceted.
+adaptive_chord_tol: 0.02          # m max deviation from the true curve. 0.005 = sub-cm; 0.1 = chorded.
+adaptive_min_step: 0.5            # m floor on spacing (caps vertex blow-up on hairpins). Raise to thin.
+adaptive_max_step: 1000000.0      # m cap on spacing (huge = unbounded). Set ~10 to force min tessellation.
+
+# --- Intersection: which default movements get seeded -------------------------------------------
+# The heading change incoming→outgoing is binned into straight/left/right/u-turn. U-turns are dropped.
+turn_straight_max_deg: 45.0       # |Δheading| ≤ this ⇒ STRAIGHT. 30 = only near-aligned count straight.
+turn_u_turn_min_deg: 135.0        # |Δheading| ≥ this ⇒ U_TURN (dropped). 150 keeps sharp turns as L/R.
+
+# --- Intersection: connecting-road geometry -----------------------------------------------------
+connecting_lane_default_width: 3.5  # m fallback connecting-lane width. GCC arterial ≈ 3.5, residential ≈ 3.0.
+connection_tangent_tol: 0.999     # tangent-dot "aligned" threshold (~2.6°). 0.99 (~8°) snaps more
+                                  # connectors to straight lines; higher = stricter (more arcs/Béziers).
+connection_upgrade_samples: 3     # interior samples kept when an edited arc becomes a control-point spline.
+
+# --- Junction surface: boundary fillets + cap topology ------------------------------------------
+junction_corner_sampling_step: null  # m between samples along each corner fillet. null ⇒ default_sampling_step.
+                                  # 0.5 = smooth rounded corners (more verts); 2.0 = chunkier.
+junction_cap_interior_spacing: 3.0   # m between interior Delaunay points filling the cap. Smaller =
+                                  # denser, more uniform triangles (no slivers). 1.5 = fine; 6.0 = coarse.
+                                  # Set 0 to fall back to the simple centroid fan (stretchy triangles).
+junction_cap_boundary_max_edge: 3.0  # m. Long boundary edges (the straight road end-edges) are split
+                                  # below this before triangulating so the boundary matches the interior
+                                  # density. Keep ≈ junction_cap_interior_spacing.

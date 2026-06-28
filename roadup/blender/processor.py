@@ -12,21 +12,21 @@ if TYPE_CHECKING:
 
 
 class MeshProcessor(Protocol):
-    def boolean_union(self, meshes: list["MeshData"]) -> "MeshData": ...
-    def remesh(self, mesh: "MeshData", voxel_size: float) -> "MeshData": ...
-    def decimate(self, mesh: "MeshData", ratio: float) -> "MeshData": ...
+    def boolean_union(self, meshes: list[MeshData]) -> MeshData: ...
+    def remesh(self, mesh: MeshData, voxel_size: float) -> MeshData: ...
+    def decimate(self, mesh: MeshData, ratio: float) -> MeshData: ...
 
 
 class PurePythonMeshProcessor:
     """numpy/geometry-based default - sufficient for simple junctions."""
 
-    def boolean_union(self, meshes: list["MeshData"]) -> "MeshData":
+    def boolean_union(self, meshes: list[MeshData]) -> MeshData:
         raise NotImplementedError
 
-    def remesh(self, mesh: "MeshData", voxel_size: float) -> "MeshData":
+    def remesh(self, mesh: MeshData, voxel_size: float) -> MeshData:
         raise NotImplementedError
 
-    def decimate(self, mesh: "MeshData", ratio: float) -> "MeshData":
+    def decimate(self, mesh: MeshData, ratio: float) -> MeshData:
         raise NotImplementedError
 
 

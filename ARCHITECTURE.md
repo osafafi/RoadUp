@@ -142,7 +142,7 @@ Detailed interfaces are in [CODE_REFERENCE.md](CODE_REFERENCE.md) under the matc
 | Package | Responsibility | Key external deps | Pure Python? |
 |---------|----------------|-------------------|--------------|
 | `common/` | Shared enums, dataclasses, IDs, units, error hierarchy, config loading. | — | Yes |
-| `geometry/` | Editable control-point splines, curve sampling, lateral offset, `MeshData` + builders. | numpy | Yes |
+| `geometry/` | Editable control-point splines, curve sampling, lateral offset, `MeshData` + builders, Delaunay polygon fill (`triangulate`). | numpy | Yes |
 | `opendrive/model/` | Thin dataclasses mirroring OpenDRIVE 1.x elements (the source-of-truth model). | — | Yes |
 | `opendrive/io/` | `.xodr` read (pure-Python lxml default; libOpenDRIVE adapter deferred) and write (scenariogeneration adapter); `<userData>` round-trip. | scenariogeneration, lxml, (libOpenDRIVE) | Adapter-isolated |
 | `opendrive/eval/` | Pure-Python plan-view eval (`planview`: line/arc/paramPoly3 closed-form, spiral integrated) + `sampler`: ref-line frames and lane boundary polylines for meshing. A native libOpenDRIVE path can replace eval behind the same surface. | numpy, (libOpenDRIVE) | Adapter-isolated |
@@ -208,9 +208,19 @@ This is the most distinctive requirement and drives the intersection design.
   spline upgrades from the implicit arc to an explicit control-point curve (Bézier/Catmull-Rom in
   `geometry/`), serialized to OpenDRIVE as `paramPoly3` (one or more records).
 - **Geometry adapts:** the connecting road's lanes follow the edited reference line; the
-  intersection **surface** is regenerated from the current set of connection splines and the incoming
-  lane boundaries. Move a control point → resample that connecting road → rebuild the junction
-  surface patch. No other junction is affected.
+  intersection **surface** is regenerated. Move a control point → resample that connecting road →
+  rebuild the junction surface patch. No other junction is affected.
+- **Junction surface = capped boundary loop** (`intersections/boundary` + `surface`), *not* a blind
+  union of connecting-road ribbons (that double-stacks a vertex on every shared edge). Each **node
+  road** contributes its drivable end-cross-section (two corner vertices); angularly-adjacent roads
+  are bridged by an **editable corner fillet** — a cubic Bézier tangent to each road's edge, curving
+  *inward* (concave, toward the junction centre — the classic rounded corner), handle length sized
+  to a true circular arc of the corner angle. The ring (end-edges + sampled fillets, every vertex once)
+  is capped to one watertight mesh — by default a **Delaunay fill** (`geometry/triangulate`) that
+  scatters interior Steiner points (`Config.junction_cap_interior_spacing`) for near-isotropic
+  triangles, not a stretchy centroid fan. Corner handles are editable in the viewport (Stage 6); only
+  *edited* handles persist, as offsets from their geometry-derived endpoints, under
+  `junction.user_data["boundary"]` so a read → edit → write cycle round-trips.
 - **Lane connectivity** (which incoming lane connects to which outgoing lane) is resolved separately
   from spline *shape*; connectivity defines *which* connecting roads exist, the spline defines their
   *path*. See [CODE_REFERENCE.md §9](CODE_REFERENCE.md).
@@ -478,7 +488,7 @@ ruff                  # lint + format
 
 **Phase 1 — Core model & geometry**
 1. `common/` — enums, ids, units, errors, config.
-2. `geometry/` — splines (control-point editing), sampling, offset, `MeshData`/builders.
+2. `geometry/` — splines (control-point editing), sampling, offset, `MeshData`/builders, `triangulate` (Delaunay fill).
 3. `opendrive/model/` — dataclasses for roads, lane sections, lanes, width laws, road marks, junctions.
 
 **Phase 2 — OpenDRIVE I/O (lean on libraries)**
@@ -496,7 +506,8 @@ ruff                  # lint + format
 11. `intersections/connectivity` — lane connectivity resolution.
 12. `intersections/connection_spline` — default arc + control-point editing.
 13. `intersections/junction_builder` — author junction + connecting roads.
-14. `intersections/surface` — adaptive intersection surface.
+14. `intersections/{boundary,surface}` — editable junction boundary (node-road end-edges + corner
+    Bézier fillets) capped to the intersection surface.
 
 **Phase 5 — Output & Tooling**
 15. `usd/` — stage generation, prim↔id mapping, materials.

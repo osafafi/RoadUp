@@ -20,9 +20,11 @@ from roadup.segments.builder import bake_reference_line
 if TYPE_CHECKING:
     from roadup.opendrive.model.road import Geometry
 
-# Interior samples used when an editable arc is upgraded to a control-point spline (keeps shape).
+# Defaults for the connector knobs; the live values come from Config (see JunctionBuilder), these
+# only apply when ConnectionSpline is used standalone.
+#: Interior samples used when an editable arc is upgraded to a control-point spline (keeps shape).
 _UPGRADE_SAMPLES = 3
-# A unit-tangent dot above this counts as "aligned" (~2.6°) for line/arc feasibility tests.
+#: A unit-tangent dot above this counts as "aligned" (~2.6°) for line/arc feasibility tests.
 _TANGENT_TOL = 0.999
 
 
@@ -32,9 +34,12 @@ class ConnectionSpline:
     spline: Spline
     is_default_arc: bool   # True until the user edits control points
 
-    def __init__(self, spline: Spline, is_default_arc: bool) -> None:
+    def __init__(
+        self, spline: Spline, is_default_arc: bool, *, upgrade_samples: int = _UPGRADE_SAMPLES
+    ) -> None:
         self.spline = spline
         self.is_default_arc = is_default_arc
+        self._upgrade_samples = upgrade_samples
 
     @classmethod
     def default_arc(
@@ -43,15 +48,23 @@ class ConnectionSpline:
         start_tangent: Vec3,
         end: Vec3,
         end_tangent: Vec3,
+        *,
+        tangent_tol: float = _TANGENT_TOL,
+        upgrade_samples: int = _UPGRADE_SAMPLES,
     ) -> ConnectionSpline:
         """The simplest tangent-honouring connector between two lane ends (the default).
 
         Line if both tangents point along the chord; minimal circular arc if one arc honours both
         tangents (symmetric turns); otherwise a tangent-matched cubic Bézier (general skewed case).
         Named ``default_arc`` for the spec/round-trip payload; ``is_default_arc`` marks the shape as
-        the unedited default regardless of which primitive was chosen.
+        the unedited default regardless of which primitive was chosen. ``tangent_tol`` sets the
+        line-vs-arc alignment threshold; ``upgrade_samples`` the resolution kept on a later edit.
         """
-        return cls(_default_spline(start, start_tangent, end, end_tangent), is_default_arc=True)
+        return cls(
+            _default_spline(start, start_tangent, end, end_tangent, tangent_tol),
+            is_default_arc=True,
+            upgrade_samples=upgrade_samples,
+        )
 
     def add_control_point(self, t: float) -> str:
         """Add an editable control point (flips ``is_default_arc`` False); returns its id."""
@@ -82,7 +95,7 @@ class ConnectionSpline:
     # --- internals --------------------------------------------------------------------
     def _upgrade_to_control_points(self) -> None:
         """Replace the default shape with an equivalent Catmull-Rom control-point spline."""
-        n = _UPGRADE_SAMPLES + 1
+        n = self._upgrade_samples + 1
         pts = [
             ControlPoint(position=self.spline.evaluate(i / n), id=f"cp_{i + 1:03d}")
             for i in range(n + 1)
@@ -91,7 +104,9 @@ class ConnectionSpline:
         self.is_default_arc = False
 
 
-def _default_spline(start: Vec3, st: Vec3, end: Vec3, et: Vec3) -> Spline:
+def _default_spline(
+    start: Vec3, st: Vec3, end: Vec3, et: Vec3, tangent_tol: float = _TANGENT_TOL
+) -> Spline:
     chord = np.asarray(end, dtype=float) - np.asarray(start, dtype=float)
     chord_len = float(np.linalg.norm(chord))
     st_u, et_u = _unit(st), _unit(et)
@@ -99,14 +114,14 @@ def _default_spline(start: Vec3, st: Vec3, end: Vec3, et: Vec3) -> Spline:
     if chord_len > 1e-9:
         chord_u = chord / chord_len
         along_chord = min(float(np.dot(st_u, chord_u)), float(np.dot(et_u, chord_u)))
-        if along_chord > _TANGENT_TOL:
+        if along_chord > tangent_tol:
             return _line(start, end)
     # Minimal circular arc, when a single arc honours both tangents (symmetric turns).
     try:
         arc = Spline.circular_arc(start, st, end, et)
     except GeometryError:
         arc = None
-    if arc is not None and float(np.dot(_unit(arc.tangent(1.0)), et_u)) > _TANGENT_TOL:
+    if arc is not None and float(np.dot(_unit(arc.tangent(1.0)), et_u)) > tangent_tol:
         return arc
     # General case: a cubic Bézier matching position + tangent at both ends (bakes to paramPoly3).
     return _hermite_bezier(start, st_u, end, et_u, chord_len)

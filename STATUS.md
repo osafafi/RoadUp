@@ -1,7 +1,7 @@
 # RoadUp — Build Status
 
 > **Current stage: Stage 5 — USD output & headless tooling  ·  ✅ complete**
-> Last updated: 2026-06-27
+> Last updated: 2026-06-28
 
 **What works right now:** you can **author a junction** where several roads meet —
 `roadup.intersections.connectivity.ConnectivitySolver` seeds geometry-aware default movements
@@ -11,8 +11,11 @@ authors a **connecting road per movement** whose reference line is an **editable
 straight-throughs, minimal `<arc>` for symmetric turns, else a tangent-matched cubic Bézier →
 `paramPoly3`), and it upgrades to a control-point spline when edited — registers the
 `<connection>`/`<laneLink>`, and
-`roadup.intersections.surface.IntersectionSurface` meshes the junction surface (connecting-road
-ribbons + a fan cap, pure-Python). The writer now **emits `<junction>`** (connecting roads carry the
+`roadup.intersections.surface.IntersectionSurface` meshes the junction surface as the **cap over a
+single clean boundary loop** — each node road's drivable end-edge joined to its neighbour by an
+**editable corner Bézier fillet** (`intersections.boundary`), every boundary vertex emitted once
+(replacing the old ribbon-union that double-stacked edge vertices); edited corner handles round-trip
+via `junction.user_data`. The writer now **emits `<junction>`** (connecting roads carry the
 junction id) and the reader parses it back. Stage 3 still holds: **draw a reference-line `Spline` and
 bake it** via `SegmentBuilder` into plan-view geometry + lanes + width laws + road marks from
 **external presets** (`presets/*.yaml`); link roads with `network.linkage.LinkResolver`; validate,
@@ -21,7 +24,7 @@ write **OpenDRIVE 1.7 `.xodr`**, read it back, and sample reference lines + lane
 4-way with unequal lane counts + mismatched widths, a 2-road bend, a 3-way, and a 5-road star).
 **Stage 4.5 adds road elevation + banking and curvature-adaptive meshing** (see below).
 **Stage 5 generates the USD viewport stage and the headless tooling layer** (see below).
-**223 tests pass, 0 fail; 3 remain skipped** for not-yet-built modules (`blender` → Phase 7;
+**237 tests pass, 0 fail; 3 remain skipped** for not-yet-built modules (`blender` → Phase 7;
 `network/spatial` + `network/snapping` → Phase 6). The USD tests need `pxr` and `importorskip` it,
 so they run where USD is installed and skip cleanly in pure-Python CI.
 
@@ -81,11 +84,12 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | `common/types` · `common/errors` | ✅ | enums + error hierarchy (scaffold) |
 | `common/ids` | ✅ | `make_id` / `parse_id` / `IdAllocator` (zero-padded, signed) |
 | `common/units` | ✅ | `kmh_to_ms`, `deg_to_rad`, `grade_percent` |
-| `common/config` | ✅ | `Config`, `resolve_presets_dir` (override → env → repo `presets/`) |
+| `common/config` | ✅ | `Config` (all global generation knobs — sampling, adaptive mesh, intersection connectivity/geometry, junction cap; richly documented), `load_config` (YAML / `$ROADUP_CONFIG`), `resolve_presets_dir`. See `config.example.yaml`. |
 | `geometry/splines` | ✅ | `Spline` line/catmullRom/bezier/arc; evaluate/tangent/curvature/length/sample; edit ops; `circular_arc` |
 | `geometry/sampling` | ✅ | `Frame`, `sample_frames`, `resample_by_arclength` (+t = left-of-tangent) |
 | `geometry/offset` | ✅ | `offset_polyline`, `lane_boundary` |
-| `geometry/mesh` | ✅ | `MeshData` merge/manifold; `MeshBuilder` ribbon/extrude/polygon_surface |
+| `geometry/mesh` | ✅ | `MeshData` merge/manifold; `MeshBuilder` ribbon/extrude/`polygon_surface` (centroid fan **or** Delaunay-filled cap via `interior_spacing`) |
+| `geometry/triangulate` | ✅ | pure-Python Bowyer–Watson `delaunay` + `point_in_polygon` + `interior_grid` + `fill_polygon` (backs the Delaunay junction cap) |
 | `opendrive/model/road` | ✅ | dataclasses + `LaneSection.lane/lane_ids`, `Road.lane_section_at` |
 | `opendrive/model/junction` | ✅ | dataclasses (junction *building* is Phase 4) |
 | `opendrive/model/network` | ✅ | `OpenDriveModel` add/get/remove/validate |
@@ -130,7 +134,9 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | `intersections/connectivity` | ✅ | `ConnectivitySolver.movements_at`: per-road node contact + travel dir (`road_ends`), heading-delta turn classification (straight/left/right, u-turns dropped), RHT driving-lane pairing inner-to-inner |
 | `intersections/connection_spline` | ✅ | `ConnectionSpline`: default = simplest tangent-honouring connector (`<line>` straight / minimal `<arc>` symmetric / tangent-matched cubic Bézier → `paramPoly3` for skew); `add_control_point` upgrades to a Catmull-Rom spline; reuses `segments.builder.bake_reference_line`; `<userData>` payload |
 | `intersections/junction_builder` | ✅ | `JunctionBuilder`: connecting road per movement (lane centre from `Sampler.lane_boundaries`), `<connection>`/`<laneLink>`, road+lane links, editable-spline registry, `rebuild_connection` |
-| `intersections/surface` | ✅ | `IntersectionSurface`: connecting-road ribbons (`MeshBuilder.ribbon`) + fan cap (`polygon_surface`), pure-Python; boolean union deferred to `blender` (Phase 7) |
+| `intersections/boundary` | ✅ | `JunctionBoundary` = node-road end-edges (`RoadExtremity` cw/ccw corners) joined by editable corner `Corner` Bézier fillets (concave inward corners, handle length sized to a true circular arc of the corner angle); `ring()` emits each boundary vertex once; edited handles round-trip as endpoint-relative offsets |
+| `intersections/surface` | ✅ | `IntersectionSurface`: caps the boundary loop into one watertight surface (no double-stacked edge verts — the old ribbon-union bug); cap topology is **Delaunay-filled** by default (config knob) for near-isotropic triangles, not a stretchy centroid fan; `boundary()` rebuilds default fillets + applies `junction.user_data` overrides, `commit_boundary()` persists edited handles; inherits a `Config` from the sampler; boolean union deferred to `blender` (Phase 7) |
+| `geometry/triangulate` | ✅ | **new** — pure-Python Bowyer–Watson `delaunay`, `point_in_polygon`, `interior_grid` (Steiner points), `fill_polygon`; backs `MeshBuilder.polygon_surface(interior_spacing=…)` for the junction cap |
 | `opendrive/io/writer` | ✅ | now emits `<junction>` + `<connection>`/`<laneLink>`; connecting roads carry the junction id (`road_type`) |
 | `opendrive/io/reader` | ✅ | parses `<junction>` back (int road-id → string id map) |
 
@@ -193,18 +199,19 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 
 ```bash
 . .venv/Scripts/activate                 # Python 3.12 (see README "Requirements")
-pytest -q                                # 223 passed, 3 skipped (USD tests need `pxr`; importorskip otherwise)
+pytest -q                                # 237 passed, 3 skipped (USD tests need `pxr`; importorskip otherwise)
 
 # Generate .xodr files to open in an OpenDRIVE visualizer (-> examples/out/, gitignored):
 python examples/generate_xodr_samples.py
 #   showcase.xodr  + one file per sample road
 #   covers line / arc / spiral / paramPoly3, 6 lane types, white+yellow + double marks, a width taper
 
-# Mesh the showcase into .obj for visual topology inspection in Blender (-> examples/out/):
-python examples/generate_obj_meshes.py
-#   showcase.obj + per-road; each road = <road>_Surface + one <road>_Lane_<id> object (meters, Z-up).
-#   Validation harness over the built Sampler + MeshBuilder; the real 3D layer is roadup/usd (Phase 5).
-#   tests/integration/test_mesh_export.py is the programmatic mesh-correctness gate.
+# Generate the USD viewport stage for visual inspection in Blender / usdview (-> examples/out/):
+python examples/generate_usd.py
+#   showcase.usdc + per-road crates; id-tagged Mesh surfaces / lane strips / junction patches + Rails.
+#   Needs `pxr` (USD) installed. tests/integration/test_mesh_export.py is the programmatic mesh gate.
+# Tune generation knobs (sampling density, intersection thresholds, junction cap topology, ...):
+ROADUP_CONFIG=config.example.yaml python examples/generate_usd.py   # every Config field documented there
 
 pytest tests/integration/test_xodr_write.py -s       # prints a generated .xodr to stdout
 pytest tests/integration/test_xodr_roundtrip.py -s   # write -> read -> compare topology + userData
@@ -263,7 +270,8 @@ inside the `*.scene.usda` layer (ARCHITECTURE.md §9.1) — `PointInstancer` alo
 1. `intersections/connectivity` — geometry-aware default movements (turn classification + RHT lane pairing).
 2. `intersections/connection_spline` — default arc (or line), editable → `paramPoly3`; `<userData>` round-trip.
 3. `intersections/junction_builder` — `Junction` + connecting roads + `<connection>`/`<laneLink>`; rebuild on edit.
-4. `intersections/surface` — pure-Python junction surface (ribbons + fan cap).
+4. `intersections/{boundary,surface}` — junction surface as a capped boundary loop (node-road
+   end-edges + editable corner Bézier fillets).
 5. Writer/reader `<junction>` emission + parse; showcase + obj generators gain a 4-way junction.
 
 ### Superseded — Stage 3 (authoring) ✅ done

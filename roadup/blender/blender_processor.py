@@ -15,11 +15,11 @@ class BlenderMeshProcessor:
     def __init__(self, blender_exe: str | None = None) -> None:
         self._blender_exe = blender_exe
 
-    def boolean_union(self, meshes: list["MeshData"]) -> "MeshData":
+    def boolean_union(self, meshes: list[MeshData]) -> MeshData:
         raise NotImplementedError
 
-    def remesh(self, mesh: "MeshData", voxel_size: float) -> "MeshData":
+    def remesh(self, mesh: MeshData, voxel_size: float) -> MeshData:
         raise NotImplementedError
 
-    def decimate(self, mesh: "MeshData", ratio: float) -> "MeshData":
+    def decimate(self, mesh: MeshData, ratio: float) -> MeshData:
         raise NotImplementedError

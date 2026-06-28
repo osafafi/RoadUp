@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from roadup.common.config import Config
 from roadup.common.errors import IntersectionError
 from roadup.common.ids import IdAllocator
 from roadup.common.types import LaneType, Vec3
@@ -23,17 +24,19 @@ if TYPE_CHECKING:
     from roadup.intersections.connectivity import Movement, RoadEnd
     from roadup.opendrive.model.network import OpenDriveModel
 
-# All connecting-road lanes are a single right (negative) driving lane.
+# Structural invariant (not a tunable): all connecting-road lanes are a single right (-1) driving
+# lane, so the reference line anchors on the lane's inner edge. The fallback lane *width* is a knob
+# (Config.connecting_lane_default_width).
 _CONNECTING_LANE_ID = -1
-_DEFAULT_LANE_WIDTH = 3.5
 
 
 class JunctionBuilder:
     """Create a junction and its connecting roads (each with a :class:`ConnectionSpline`)."""
 
-    def __init__(self, model: OpenDriveModel) -> None:
+    def __init__(self, model: OpenDriveModel, *, config: Config | None = None) -> None:
         self._model = model
-        self._sampler = Sampler(model)
+        self._config = config or Config()
+        self._sampler = Sampler(model, config=self._config)
         self._ids = IdAllocator()
         for road_id in model.roads:
             self._ids.reserve(road_id)
@@ -48,7 +51,7 @@ class JunctionBuilder:
         node_roads = sorted(
             {m.incoming_road for m in movements} | {m.outgoing_road for m in movements}
         )
-        ends = ConnectivitySolver(self._model).road_ends(node_roads)
+        ends = ConnectivitySolver(self._model, config=self._config).road_ends(node_roads)
 
         junction = Junction(id=junction_id)
         for i, mv in enumerate(movements):
@@ -100,7 +103,14 @@ class JunctionBuilder:
         end = self._lane_anchor(mv.outgoing_road, mv.outgoing_lane, b.contact)
         start_tan = (float(a.approach[0]), float(a.approach[1]), 0.0)
         end_tan = (float(b.departure[0]), float(b.departure[1]), 0.0)
-        spline = ConnectionSpline.default_arc(start, start_tan, end, end_tan)
+        spline = ConnectionSpline.default_arc(
+            start,
+            start_tan,
+            end,
+            end_tan,
+            tangent_tol=self._config.connection_tangent_tol,
+            upgrade_samples=self._config.connection_upgrade_samples,
+        )
 
         geometry = spline.to_geometry_records()
         length = sum(g.length for g in geometry)
@@ -144,4 +154,4 @@ class JunctionBuilder:
     def _lane_width(self, road_id: str, lane_id: int) -> float:
         section = self._model.get_road(road_id).lane_sections[0]
         lane = section.lane(lane_id)
-        return lane.widths[0].a if lane.widths else _DEFAULT_LANE_WIDTH
+        return lane.widths[0].a if lane.widths else self._config.connecting_lane_default_width

@@ -138,6 +138,19 @@ class Config:
     adaptive_chord_tol: float = 0.02      # meters — max chord deviation from the true curve
     adaptive_min_step: float = 0.5        # meters — floor on station spacing (caps hairpin density)
     adaptive_max_step: float = 1.0e6      # meters — cap (effectively unbounded: straights stay 2 pts)
+    # Intersection — lane connectivity (which default movements are seeded):
+    turn_straight_max_deg: float = 45.0   # |Δheading| ≤ this ⇒ STRAIGHT
+    turn_u_turn_min_deg: float = 135.0    # |Δheading| ≥ this ⇒ U_TURN (dropped from defaults)
+    # Intersection — connecting-road geometry:
+    connecting_lane_default_width: float = 3.5  # meters — fallback connecting-lane width
+    connection_tangent_tol: float = 0.999       # tangent-dot "aligned" threshold (line vs arc vs Bézier)
+    connection_upgrade_samples: int = 3         # samples kept when an edited arc → control-point spline
+    # Junction surface — corner fillets + cap topology:
+    junction_corner_sampling_step: float | None = None  # m along each fillet; None ⇒ default step
+    junction_cap_interior_spacing: float = 3.0  # m between interior Delaunay points; 0 ⇒ centroid fan
+    junction_cap_boundary_max_edge: float = 3.0  # m — subdivide long boundary edges before triangulating
+
+# All Config fields are loadable from YAML (load_config / $ROADUP_CONFIG); see config.example.yaml.
 
 def resolve_presets_dir(override: str | Path | None = None) -> Path:
     """Locate presets dir: override -> $ROADUP_PRESETS_DIR -> repo-root presets/."""
@@ -246,9 +259,24 @@ class MeshBuilder:
         """Triangulated strip between two boundary polylines (road / marking surface)."""
         ...
     def extrude(self, path: list[Vec3], cross_section: list[Vec2]) -> MeshData: ...
-    def polygon_surface(self, boundary: list[Vec3]) -> MeshData:
-        """Cap an intersection area bounded by a closed polyline (ear-clip / constrained)."""
+    def polygon_surface(
+        self, boundary: list[Vec3], *,
+        interior_spacing: float | None = None, boundary_max_edge: float | None = None,
+    ) -> MeshData:
+        """Cap a closed boundary polyline into a surface (intersection area).
+        interior_spacing None -> centroid fan; a metre value -> Delaunay fill with interior Steiner
+        points (near-isotropic triangles, no slivers); boundary_max_edge subdivides long edges
+        first. Falls back to the fan when the cap is smaller than the spacing."""
         ...
+
+# geometry/triangulate.py — planar Delaunay fill for the junction cap (pure-Python / numpy).
+def point_in_polygon(x: float, y: float, poly: np.ndarray) -> bool: ...
+def interior_grid(boundary_xy: np.ndarray, spacing: float, *, margin_frac: float = 0.5) -> np.ndarray:
+    """Grid of points strictly inside the polygon, ~spacing apart (interior Steiner points)."""
+def delaunay(points: np.ndarray) -> list[tuple[int, int, int]]:
+    """Bowyer–Watson Delaunay of N×2 points; CCW index triples."""
+def fill_polygon(boundary_xy, interior_xy) -> list[tuple[int, int, int]]:
+    """Delaunay over boundary+interior, keep triangles whose centroid is inside the boundary."""
 ```
 
 ---
@@ -887,17 +915,63 @@ class JunctionBuilder:
 ```
 
 ```python
+# intersections/boundary.py
+from geometry.splines import Spline
+from common.types import Vec3
+
+@dataclass
+class RoadExtremity:
+    """One node road's drivable end-cross-section: cw/ccw corners + outward unit xy direction."""
+    road_id: str; cw: Vec3; ccw: Vec3; outward: tuple[float, float]
+
+@dataclass
+class Corner:
+    """Editable cubic-Bézier fillet from from_road's ccw corner to to_road's cw corner."""
+    id: str; from_road: str; to_road: str
+    start: Vec3; end: Vec3; out_handle: Vec3; in_handle: Vec3; edited: bool = False
+    def spline(self) -> Spline: ...
+    def sample(self, step: float) -> list[Vec3]: ...
+    def move_out_handle(self, position: Vec3) -> None: ...   # sets edited = True
+    def move_in_handle(self, position: Vec3) -> None: ...
+
+@dataclass
+class JunctionBoundary:
+    """Closed junction boundary (CCW): road end-edges joined by corner fillets."""
+    extremities: list[RoadExtremity]; corners: list[Corner]
+    def ring(self, step: float = 1.0) -> list[Vec3]:
+        """Boundary polyline, every vertex once (fillet endpoints == the road-edge corners)."""
+        ...
+    def corner(self, cid: str) -> Corner: ...
+    def overrides(self) -> dict:        # only edited corners, as handle offsets from endpoints
+        ...
+    def apply_overrides(self, payload: dict) -> None: ...
+
+def corner_id(from_road: str, to_road: str) -> str: ...     # stable "from->to" key
+def default_corner(cid, from_road, to_road, start, end, start_outward, end_outward) -> Corner:
+    """Circular fillet: handles point inward (concave), length sized to the corner-angle arc."""
+    ...
+```
+
+```python
 # intersections/surface.py
 from geometry.mesh import MeshData
 from opendrive.model.junction import Junction
 from opendrive.eval.sampler import Sampler
+from intersections.boundary import JunctionBoundary
 
 class IntersectionSurface:
-    """Generate the junction surface mesh from current connection splines + incoming lane edges."""
-    def __init__(self, sampler: Sampler): ...
+    """Generate (and round-trip the editable boundary of) a junction surface mesh."""
+    def __init__(self, sampler: Sampler, *, config: Config | None = None,
+                 corner_step: float | None = None): ...   # config defaults to sampler.config
     def generate(self, junction: Junction) -> MeshData:
-        """Boundary = union of outer lane edges + connection-spline fans; capped to a surface.
-        Heavy boolean cases may be delegated to blender.MeshProcessor (see §12)."""
+        """Cap the boundary loop (node-road end-edges + corner fillets) into one watertight mesh.
+        No double-stacked edge vertices. Heavy boolean cases -> blender.MeshProcessor (see §12)."""
+        ...
+    def boundary(self, junction: Junction) -> JunctionBoundary:
+        """Default fillets from current geometry + any handle overrides from junction.user_data."""
+        ...
+    def commit_boundary(self, junction: Junction, boundary: JunctionBoundary) -> None:
+        """Persist edited corner handles into junction.user_data["boundary"] (round-trips)."""
         ...
 ```
 

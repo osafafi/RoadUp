@@ -107,14 +107,35 @@ class MeshBuilder:
                 indices.extend([base_a + j, base_b + j, base_b + j + 1, base_a + j + 1])
         return MeshData(points=points, face_vertex_counts=counts, face_vertex_indices=indices)
 
-    def polygon_surface(self, boundary: list[Vec3]) -> MeshData:
+    def polygon_surface(
+        self,
+        boundary: list[Vec3],
+        *,
+        interior_spacing: float | None = None,
+        boundary_max_edge: float | None = None,
+    ) -> MeshData:
         """Cap a closed boundary polyline into a surface (intersection area).
 
-        Fan triangulation from the centroid — exact for star-convex boundaries (the common
-        intersection cap). Heavy concave/boolean cases are delegated to ``roadup.blender``.
+        ``interior_spacing`` selects the topology:
+
+        * ``None`` — **centroid fan**: one central vertex to every boundary vertex. Exact for
+          star-convex boundaries but yields long thin triangles on a large/irregular cap.
+        * a metre value — **Delaunay fill**: scatter interior Steiner points ~``interior_spacing``
+          apart and Delaunay-triangulate boundary + interior, for near-isotropic triangles (no
+          slivers). ``boundary_max_edge`` (metres) first subdivides any long boundary edge — e.g. a
+          road's straight end-edge — so the boundary sampling matches the interior density. Falls
+          back to the fan when the cap is smaller than the spacing.
+
+        Heavy concave/boolean cases are delegated to ``roadup.blender`` (Stage 7).
         """
         if len(boundary) < 3:
             raise GeometryError("polygon_surface needs at least three boundary points")
+        if interior_spacing is None:
+            return self._fan_cap(boundary)
+        return self._delaunay_cap(boundary, interior_spacing, boundary_max_edge)
+
+    # --- cap topologies ---------------------------------------------------------------
+    def _fan_cap(self, boundary: list[Vec3]) -> MeshData:
         pts = np.asarray(boundary, dtype=float)
         centroid = pts.mean(axis=0)
         points: list[Vec3] = [(float(centroid[0]), float(centroid[1]), float(centroid[2]))]
@@ -126,3 +147,68 @@ class MeshBuilder:
             counts.append(3)
             indices.extend([0, 1 + i, 1 + (i + 1) % n])
         return MeshData(points=points, face_vertex_counts=counts, face_vertex_indices=indices)
+
+    def _delaunay_cap(
+        self, boundary: list[Vec3], spacing: float, max_edge: float | None
+    ) -> MeshData:
+        from roadup.geometry.triangulate import fill_polygon, interior_grid
+
+        ring = _densify_ring(boundary, max_edge) if max_edge else list(boundary)
+        ring_arr = np.asarray(ring, dtype=float)
+        boundary_xy = ring_arr[:, :2]
+        plane = _fit_plane(ring_arr)
+        interior_xy = interior_grid(boundary_xy, spacing)
+        tris = fill_polygon(boundary_xy, interior_xy)
+        if not tris:  # cap smaller than the spacing — nothing scattered inside; fan is safe.
+            return self._fan_cap(boundary)
+
+        interior_z = (
+            _plane_z(plane, interior_xy)
+            if len(interior_xy)
+            else np.empty((0,))
+        )
+        points: list[Vec3] = [(float(x), float(y), float(z)) for x, y, z in ring_arr]
+        points.extend(
+            (float(interior_xy[k, 0]), float(interior_xy[k, 1]), float(interior_z[k]))
+            for k in range(len(interior_xy))
+        )
+        counts = [3] * len(tris)
+        indices: list[int] = [idx for tri in tris for idx in tri]
+        return MeshData(points=points, face_vertex_counts=counts, face_vertex_indices=indices)
+
+
+def _densify_ring(boundary: list[Vec3], max_edge: float) -> list[Vec3]:
+    """Subdivide any closed-ring edge longer than ``max_edge`` by linear interpolation (incl. z)."""
+    pts = np.asarray(boundary, dtype=float)
+    n = len(pts)
+    out: list[Vec3] = []
+    for i in range(n):
+        a = pts[i]
+        b = pts[(i + 1) % n]
+        out.append((float(a[0]), float(a[1]), float(a[2])))
+        seg = float(np.linalg.norm(b - a))
+        cuts = int(seg // max_edge) if max_edge > 0.0 else 0
+        for k in range(1, cuts + 1):
+            t = k / (cuts + 1)
+            p = a + (b - a) * t
+            out.append((float(p[0]), float(p[1]), float(p[2])))
+    return out
+
+
+def _fit_plane(ring: np.ndarray) -> tuple[float, float, float]:
+    """Least-squares plane ``z = a*x + b*y + c`` through the boundary (for interior-point z).
+
+    Junctions are near-flat or gently sloped, so a single plane is plenty; degenerate fits (all
+    points collinear in xy) fall back to a constant mean z.
+    """
+    a_mat = np.column_stack([ring[:, 0], ring[:, 1], np.ones(len(ring))])
+    try:
+        coeffs, *_ = np.linalg.lstsq(a_mat, ring[:, 2], rcond=None)
+        return float(coeffs[0]), float(coeffs[1]), float(coeffs[2])
+    except np.linalg.LinAlgError:
+        return 0.0, 0.0, float(ring[:, 2].mean())
+
+
+def _plane_z(plane: tuple[float, float, float], xy: np.ndarray) -> np.ndarray:
+    a, b, c = plane
+    return a * xy[:, 0] + b * xy[:, 1] + c

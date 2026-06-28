@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from roadup.common.config import Config
 from roadup.common.types import LaneType, TurnType
 from roadup.opendrive.eval.sampler import Sampler
 
@@ -34,10 +35,6 @@ if TYPE_CHECKING:
     from roadup.geometry.sampling import Frame
     from roadup.opendrive.model.network import OpenDriveModel
     from roadup.opendrive.model.road import Lane
-
-# Turn classification thresholds, in degrees of signed heading change (CCW positive = left).
-_STRAIGHT_MAX = 45.0
-_TURN_MAX = 135.0
 
 
 @dataclass
@@ -63,9 +60,10 @@ class RoadEnd:
 class ConnectivitySolver:
     """Decide which incoming lanes connect to which outgoing lanes."""
 
-    def __init__(self, model: OpenDriveModel) -> None:
+    def __init__(self, model: OpenDriveModel, *, config: Config | None = None) -> None:
         self._model = model
-        self._sampler = Sampler(model)
+        self._config = config or Config()
+        self._sampler = Sampler(model, config=self._config)
 
     def movements_at(self, node_road_ids: list[str]) -> list[Movement]:
         """Default movements by geometry + lane type; the user can add/remove afterwards."""
@@ -123,14 +121,13 @@ class ConnectivitySolver:
             )
         return ends
 
-    @staticmethod
-    def _classify(approach: np.ndarray, departure: np.ndarray) -> TurnType:
+    def _classify(self, approach: np.ndarray, departure: np.ndarray) -> TurnType:
         dot = float(np.dot(approach, departure))
         cross = float(approach[0] * departure[1] - approach[1] * departure[0])
         angle = math.degrees(math.atan2(cross, dot))  # CCW positive
-        if abs(angle) <= _STRAIGHT_MAX:
+        if abs(angle) <= self._config.turn_straight_max_deg:
             return TurnType.STRAIGHT
-        if abs(angle) >= _TURN_MAX:
+        if abs(angle) >= self._config.turn_u_turn_min_deg:
             return TurnType.U_TURN
         return TurnType.LEFT if angle > 0 else TurnType.RIGHT
 
