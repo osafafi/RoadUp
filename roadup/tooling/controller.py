@@ -13,8 +13,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from roadup.common.errors import ValidationError
-from roadup.common.types import Vec3
-from roadup.tooling.commands import CommandStack, MoveControlPoint
+from roadup.common.ids import IdAllocator
+from roadup.common.types import RoadType, Vec3
+from roadup.tooling.commands import CommandStack, CreateRoad, MoveControlPoint
 from roadup.tooling.hover import HoverModel
 from roadup.tooling.manipulators import ManipulatorModel
 
@@ -29,9 +30,15 @@ class RoadToolController:
     EDIT_CONTEXTS = ("ROAD", "SCENE")
     TOOL_MODES = ("DRAW_ROAD", "EDIT_SPLINE", "EDIT_INTERSECTION", "EDIT_LANES", "INSPECT")
 
-    def __init__(self, model: OpenDriveModel, stage: StageGenerator | None = None) -> None:
+    def __init__(
+        self,
+        model: OpenDriveModel,
+        stage: StageGenerator | None = None,
+        road_type: RoadType = RoadType.LOCAL,
+    ) -> None:
         self._model = model
         self._stage = stage
+        self._road_type = road_type
         self._context = "ROAD"
         self._mode = "INSPECT"
         self._hover = HoverModel(model)
@@ -39,6 +46,11 @@ class RoadToolController:
         self._commands = CommandStack()
         self._drag_id: str | None = None
         self._drag_owner: str | None = None
+        # DRAW_ROAD: reference-line points accumulated until finish_draw().
+        self._draft: list[Vec3] = []
+        self._ids = IdAllocator()
+        for road_id in model.roads:
+            self._ids.reserve(road_id)
 
     # --- context / mode ----------------------------------------------------------------
     @property
@@ -110,6 +122,34 @@ class RoadToolController:
         self._drag_id = None
         self._drag_owner = None
 
+    # --- draw (DRAW_ROAD mode) ---------------------------------------------------------
+    def add_draft_point(self, world_point: Vec3) -> None:
+        """Append a clicked ground point to the in-progress reference line (DRAW_ROAD only)."""
+        if self._context != "ROAD" or self._mode != "DRAW_ROAD":
+            return
+        self._draft.append(tuple(world_point))  # type: ignore[arg-type]
+
+    def draft_points(self) -> list[Vec3]:
+        """The in-progress draw points, for the app to render a preview polyline."""
+        return list(self._draft)
+
+    def finish_draw(self) -> str | None:
+        """Bake the drafted points into a new road (≥2 points) and return its id; else ``None``."""
+        if self._context != "ROAD" or self._mode != "DRAW_ROAD" or len(self._draft) < 2:
+            self._draft = []
+            return None
+        road_id = self._ids.next("road")
+        cmd = CreateRoad(
+            self._model, road_id, self._draft, self._road_type, on_change=self._regen
+        )
+        self._commands.execute(cmd)
+        self._draft = []
+        return road_id
+
+    def cancel_draw(self) -> None:
+        """Discard the in-progress draw points."""
+        self._draft = []
+
     # --- undo/redo ---------------------------------------------------------------------
     def execute(self, command: Any) -> None:
         """Run a tooling command through the undo stack (panels issue these)."""
@@ -130,5 +170,10 @@ class RoadToolController:
 
     # --- internals ---------------------------------------------------------------------
     def _regen(self, road_id: str) -> None:
-        if self._stage is not None:
+        if self._stage is None:
+            return
+        # A road that no longer exists (deleted / CreateRoad undone) loses its prims instead.
+        if road_id in self._model.roads:
             self._stage.update_road(road_id)
+        else:
+            self._stage.remove_road(road_id)

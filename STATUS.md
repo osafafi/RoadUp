@@ -1,7 +1,7 @@
 # RoadUp — Build Status
 
-> **Current stage: Stage 6 — Omniverse Kit app  ·  🚧 environment set up** (core through Stage 5 ✅ complete)
-> Last updated: 2026-06-29
+> **Current stage: Stage 6 — Omniverse Kit app  ·  🚧 6a (draw roads in the viewport)** (core through Stage 5 ✅ complete)
+> Last updated: 2026-06-30
 
 **What works right now:** you can **author a junction** where several roads meet —
 `roadup.intersections.connectivity.ConnectivitySolver` seeds geometry-aware default movements
@@ -24,7 +24,8 @@ write **OpenDRIVE 1.7 `.xodr`**, read it back, and sample reference lines + lane
 4-way with unequal lane counts + mismatched widths, a 2-road bend, a 3-way, and a 5-road star).
 **Stage 4.5 adds road elevation + banking and curvature-adaptive meshing** (see below).
 **Stage 5 generates the USD viewport stage and the headless tooling layer** (see below).
-**237 tests pass, 0 fail; 3 remain skipped** for not-yet-built modules (`blender` → Phase 7;
+**Stage 6a binds the Kit viewport: draw a road on the ground, see it, edit its points** (see below).
+**244 tests pass, 0 fail; 3 remain skipped** for not-yet-built modules (`blender` → Phase 7;
 `network/spatial` + `network/snapping` → Phase 6). The USD tests need `pxr` and `importorskip` it,
 so they run where USD is installed and skip cleanly in pure-Python CI.
 
@@ -74,7 +75,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | **4. Intersections** | `intersections/{connectivity,connection_spline,junction_builder,surface}` ✅; writer/reader `<junction>` ✅ | ✅ |
 | **4.5 Elevation & adaptive mesh** | `opendrive/eval/elevation`, `segments/vertical_profile`, adaptive `planview`; writer/reader profiles ✅ | ✅ |
 | **5. Output & tooling** | `usd` ✅ (mapping/materials/stage + guide-curve Rails), `tooling` ✅ (controller/hover/manipulators/commands/preview + `ROAD`/`SCENE` seam) | ✅ |
-| **6. Omniverse app** | `../PurpleLight` (Kit host **"Purple Light"** + `roadup.*` exts) | 🚧 env scaffolded; interaction logic pending |
+| **6. Omniverse app** | `../PurpleLight` (Kit host **"Purple Light"** + `roadup.*` exts) | 🚧 6a done (draw roads + edit points); 6b panels/toggle pending |
 | **7. Optional acceleration** | `blender` | ⬜ |
 
 ### Phase 1 — Core model & geometry ✅
@@ -182,8 +183,8 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | `usd/stage` | ✅ | `StageGenerator`: surfaces + marking strips + junction surfaces as `Mesh`; **guide-curve Rails** (centerline + lane edges); incremental `update_road`/`update_junction`; `export`/`to_usda` |
 | `tooling/manipulators` | ✅ | `Handle` + `ManipulatorModel.set_handles` (keeps live selection/hover) |
 | `tooling/hover` | ✅ | `HoverModel`: road/junction → control-point handles; selection-pinned merge |
-| `tooling/commands` | ✅ | `CommandStack` (undo/redo) + `Move`/`Add` control point, `SetLaneCount`/`WidthLaw`/`Marking`, `ConnectSegments` |
-| `tooling/controller` | ✅ | `RoadToolController` + `ROAD`/`SCENE` `EDIT_CONTEXTS` seam; drag→`MoveControlPoint`→scoped regen |
+| `tooling/commands` | ✅ | `CommandStack` (undo/redo) + `Move`/`Add` control point, `SetLaneCount`/`WidthLaw`/`Marking`, `ConnectSegments`, `CreateRoad` (Stage 6a) |
+| `tooling/controller` | ✅ | `RoadToolController` + `ROAD`/`SCENE` `EDIT_CONTEXTS` seam; drag→`MoveControlPoint`→scoped regen; DRAW_ROAD state machine (Stage 6a) |
 | `tooling/preview` | ✅ | `PreviewGenerator`: low-res centerline guide curve on a throwaway stage |
 
 > **Stage 5 design:** USD is the **generated layer** — derived, regenerated, never hand-edited, with
@@ -199,7 +200,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 
 ```bash
 . .venv/Scripts/activate                 # Python 3.12 (see README "Requirements")
-pytest -q                                # 237 passed, 3 skipped (USD tests need `pxr`; importorskip otherwise)
+pytest -q                                # 244 passed, 3 skipped (USD tests need `pxr`; importorskip otherwise)
 
 # Generate .xodr files to open in an OpenDRIVE visualizer (-> examples/out/, gitignored):
 python examples/generate_xodr_samples.py
@@ -246,15 +247,27 @@ sibling-repo `sys.path` bootstrap) + the toggleable features `roadup.viewport` a
 status panel proves the cross-repo core load. Python module names (`roadup_core` / `roadup_viewport`
 / `roadup_ui`) are kept off `roadup.*` to avoid shadowing the core library.
 
-**Remaining (interaction logic — currently `NotImplementedError` skeletons in Purple Light):**
+> **Stage 6a (draw roads in the viewport) ✅ done — needs in-Kit verification.** The headless
+> `tooling` layer gained the missing draw path: a **`CreateRoad`** command
+> (`SegmentBuilder` → `model.add_road`, undo removes it) and a **DRAW_ROAD state machine** on
+> `RoadToolController` (`add_draft_point` / `draft_points` / `finish_draw` / `cancel_draw`, with an
+> `IdAllocator` for road ids); `StageGenerator` gained **`remove_road`** so undo drops the prims.
+> In Purple Light, `roadup.core` now **populates the session** — empty `OpenDriveModel`, `Sampler`,
+> a `StageGenerator` bound to the **live viewport stage**, and a `RoadToolController` in `DRAW_ROAD`
+> mode — (re)built on the `omni.usd` stage-OPENED event. `roadup.viewport` binds it:
+> `viewport_input.py` forwards to the controller (Enter finishes a draw, Esc cancels; ground-plane
+> ray math for click points), `manipulator_view.py` draws the draft polyline + reference-line handles
+> via `omni.ui.scene` (registered with `RegisterScene`) and routes draw/drag gestures back. **Flow:**
+> click ground points → Enter → a baked road appears → its handles show → drag a handle → re-bake +
+> regenerate in place. `tests/` cover the headless `CreateRoad`/draw-cycle; the `omni.*` binding is
+> verified by running the app (no pure-Python test).
 
-1. `roadup.core` — populate the session: load/attach an `OpenDriveModel`, build `StageGenerator`,
-   create `RoadToolController(model, stage)`. Consult **kit-dev-mcp**.
-2. `roadup.viewport` — `viewport_input.py`: cursor move/click/drag → hit-test →
-   `usd.mapping.resolve_prim` → forward to the controller; `manipulator_view.py`: render
-   `controller.manipulators()` via `omni.ui.scene`.
-3. `roadup.ui` — `panels.py`: lane count, marking/road-type preset controls issuing tooling commands;
+**Remaining for Stage 6 (→ 6b):**
+
+1. `roadup.ui` — `panels.py`: lane count, marking/road-type preset controls issuing tooling commands;
    add the **ROAD / SCENE toggle** that drives `controller.set_context`. Consult **ui-kit-mcp**.
+2. `roadup.viewport` — generalize hover-to-pick existing road prims via `viewport_api.request_query`
+   + `usd.mapping.resolve_prim` (6a auto-shows the drawn road's handles; full prim picking is 6b).
 
 Then the **scene-authoring** stage builds the scatter/array tools that ride the guide-curve Rails
 inside the `*.scene.usda` layer (ARCHITECTURE.md §9.1) — `PointInstancer` along a rail, etc.

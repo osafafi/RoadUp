@@ -7,7 +7,7 @@ viewport.
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) — responsibilities, boundaries, data flow, decisions.
 - **Interfaces / code sketches:** [CODE_REFERENCE.md](CODE_REFERENCE.md) — class/function signatures per module.
 
-> **Stage: 6 / 7 — Omniverse Kit app (environment set up 🚧) · core through Stage 5 ✅** · see **[STATUS.md](STATUS.md)**
+> **Stage: 6 / 7 — Omniverse Kit app (6a: draw roads in the viewport 🚧) · core through Stage 5 ✅** · see **[STATUS.md](STATUS.md)**
 > for the exact, per-module build state. The pure-Python core through authoring and intersections is
 > implemented: draw a reference-line spline and **bake** it into a road (geometry + lanes + width
 > laws + marking presets), link roads (road↔lane link invariant), and **author junctions** —
@@ -20,10 +20,14 @@ viewport.
 > (centerline + lane edges) tagged with `roadup:*` ids at stable paths — built so a `*.scene.usda`
 > can **sublayer** the generated layer and author a scene beside it (two sources of truth, one-way
 > dependency). A headless **tooling** layer (controller, hover, undoable commands, `ROAD`/`SCENE` edit
-> context) drives edits with **no `omni.*`**. **Stage 6 has begun:** the Omniverse Kit app (**"Purple
-> Light"**) and the `roadup.*` extensions are scaffolded in a **sibling repo** (`../PurpleLight`) — the
-> environment loads and imports this core; the viewport/panel interaction logic is the work in progress.
-> Phase 7 (optional Blender) is a stub.
+> context) drives edits with **no `omni.*`**. **Stage 6a is implemented** (needs in-Kit verification):
+> in the Omniverse Kit app (**"Purple Light"**, sibling repo `../PurpleLight`) you can **draw a road
+> on the ground** — click reference-line points, press Enter to bake it (geometry + lanes + markings
+> appear live in the viewport), then **drag its control-point handles** to re-bake in place. The
+> headless side gained a `CreateRoad` command + a DRAW_ROAD controller state machine; `roadup.core`
+> binds an empty model + `StageGenerator` + controller to the live viewport stage, and
+> `roadup.viewport` renders the handles/draft via `omni.ui.scene`. 6b (UI panels + ROAD/SCENE toggle)
+> and Phase 7 (optional Blender) are next/stubbed.
 
 ## Layout
 

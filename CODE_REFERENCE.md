@@ -1030,6 +1030,7 @@ class StageGenerator:
         """Regenerate this road's prims (surface, marking strips, Rails), preserving paths/ids."""
         ...
     def update_junction(self, junction_id: str) -> None: ...
+    def remove_road(self, road_id: str) -> None: ...   # drop a road's prim subtree (delete / undo)
     def write_marking_strip(self, mesh: MeshData, road_id: str, lane_id: int, preset_id: str): ...
     def export(self, path: str) -> None: ...   # write generated layer (a *.scene.usda sublayers it)
     def to_usda(self) -> str: ...              # the generated layer as .usda (auditing)
@@ -1094,6 +1095,7 @@ class CommandStack:
     def redo(self) -> None: ...
 
 # Concrete commands (each mutates the OpenDRIVE model, then triggers scoped regeneration):
+class CreateRoad(Command): ...        # build a new road from drawn points + preset (undo removes it)
 class MoveControlPoint(Command): ...
 class AddControlPoint(Command): ...
 class SetLaneCount(Command): ...
@@ -1112,12 +1114,18 @@ class RoadToolController:
     EDIT_CONTEXTS = ("ROAD", "SCENE")   # the "enter road editing tool" seam (ARCHITECTURE.md S9.1)
     TOOL_MODES = ("DRAW_ROAD", "EDIT_SPLINE", "EDIT_INTERSECTION", "EDIT_LANES", "INSPECT")
 
-    def __init__(self, model: OpenDriveModel, stage: "StageGenerator | None" = None): ...
+    def __init__(self, model, stage: "StageGenerator | None" = None, road_type=RoadType.LOCAL): ...
     def set_context(self, context: str) -> None: ...   # ROAD edits the model; SCENE = reserved no-op
     def set_mode(self, mode: str) -> None: ...
     def execute(self, command) -> None: ...            # run a command through the undo stack
     def undo(self) -> None: ...
     def redo(self) -> None: ...
+
+    # DRAW_ROAD mode (Stage 6a): accumulate clicked ground points, then bake a road.
+    def add_draft_point(self, world_point: Vec3) -> None: ...
+    def draft_points(self) -> list[Vec3]: ...          # in-progress points (app renders a preview)
+    def finish_draw(self) -> str | None: ...           # >=2 pts -> CreateRoad; returns new road id
+    def cancel_draw(self) -> None: ...
 
     # input (already hit-tested by the app; ids resolved via usd.mapping)
     def on_hover(self, hit: dict | None) -> "ManipulatorModel":
@@ -1212,19 +1220,23 @@ class RoadUpCoreExtension(omni.ext.IExt):
         set_session(RoadUpSession(repo_path=str(repo), config=Config()))  # session.py
     def on_shutdown(self) -> None: set_session(None)
 
-# session.py: RoadUpSession holds {repo_path, config, model, controller, stage_generator};
-# get_session()/set_session() expose the process-wide singleton. Stage 6 fills model/controller/stage.
+# session.py: RoadUpSession holds {repo_path, config, model, sampler, controller, stage_generator}.
+# Stage 6a: RoadUpSession.build(stage) creates an empty OpenDriveModel + Sampler + StageGenerator
+# (bound to the live viewport stage) + RoadToolController in DRAW_ROAD mode; the core extension
+# (re)builds it on the omni.usd stage-OPENED event. get_session()/set_session(): process singleton.
 ```
 
 ```python
 # source/extensions/roadup.viewport/roadup_viewport/  (module: roadup_viewport)
 # extension.py wires ViewportInput + ManipulatorView to roadup_core.get_session().
 class ViewportInput:        # viewport_input.py
-    """Stage 6: subscribe to cursor move/click/drag; hit-test -> usd.mapping.resolve_prim -> {kind,id};
-    forward to session.controller. start()/stop() wired; per-event handlers raise NotImplementedError."""
+    """Stage 6a: controller bridge — keyboard (Enter=finish_draw, Esc=cancel_draw) + ground-plane
+    ray math; gestures call add_draft_point / click_handle / drag_handle / release_handle / hover_prim,
+    each followed by a manipulator rebuild. 6b: prim picking via viewport_api.request_query."""
 class ManipulatorView:      # manipulator_view.py
-    """Stage 6: omni.ui.scene overlay drawing control-point handles from ManipulatorModel.
-    start()/stop() wired; rebuild() raises NotImplementedError."""
+    """Stage 6a: omni.ui.scene overlay registered with RegisterScene — draws the draft polyline
+    (controller.draft_points()) + reference-line handles (controller.manipulators().visible) and
+    routes draw/drag gestures back through ViewportInput. rebuild() invalidates the manipulator(s)."""
 ```
 
 ```python

@@ -122,6 +122,14 @@ class StageGenerator:
             preset_id = mark.preset_id or lane.user_data.get("markingPreset", "")
             self.write_marking_strip(strip, road_id, lane.id, preset_id)
 
+    def remove_road(self, road_id: str) -> None:
+        """Drop a road's prim subtree (e.g. after the road is deleted / a CreateRoad is undone)."""
+        from pxr import Sdf
+
+        if self._stage is None:
+            return
+        self._stage.RemovePrim(Sdf.Path(mapping.road_prim_path(road_id)))
+
     def update_junction(self, junction_id: str) -> None:
         from pxr import Sdf, UsdGeom
 

@@ -11,13 +11,14 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
 
 from roadup.common.errors import ValidationError
+from roadup.common.ids import make_id
 from roadup.geometry.splines import ControlPoint, Spline
 from roadup.markings.presets import get_preset
 from roadup.markings.roadmark import to_road_mark
-from roadup.segments.builder import bake_reference_line
+from roadup.segments.builder import SegmentBuilder, bake_reference_line
 
 if TYPE_CHECKING:
-    from roadup.common.types import Vec3
+    from roadup.common.types import RoadType, Vec3
     from roadup.opendrive.model.network import OpenDriveModel
     from roadup.opendrive.model.road import RoadLink
     from roadup.segments.lane_width import WidthLaw
@@ -84,6 +85,45 @@ def _notify(on_change: OnChange, road_id: str) -> None:
 
 
 # --- concrete commands ----------------------------------------------------------------
+class CreateRoad:
+    """Author a brand-new road from drawn reference-line points + a road-type preset.
+
+    The points are the world positions clicked in the viewport (DRAW_ROAD mode). They become a
+    ``catmullRom`` reference-line :class:`Spline`; :class:`SegmentBuilder` bakes plan-view geometry,
+    lanes, width records and road marks from the preset. ``undo`` removes the road again.
+    """
+
+    def __init__(
+        self,
+        model: OpenDriveModel,
+        road_id: str,
+        points: list[Vec3],
+        road_type: RoadType,
+        on_change: OnChange = None,
+    ) -> None:
+        if len(points) < 2:
+            raise ValidationError("a road needs at least two reference-line points")
+        self._model = model
+        self._road_id = road_id
+        self._points: list[Vec3] = [(float(p[0]), float(p[1]), float(p[2])) for p in points]
+        self._road_type = road_type
+        self._on_change = on_change
+
+    def do(self) -> None:
+        control = [
+            ControlPoint(position=p, id=make_id("cp", i + 1))
+            for i, p in enumerate(self._points)
+        ]
+        spline = Spline(points=control, kind="catmullRom")
+        road = SegmentBuilder(self._road_type).with_reference_line(spline).build(self._road_id)
+        self._model.add_road(road)
+        _notify(self._on_change, self._road_id)
+
+    def undo(self) -> None:
+        self._model.remove_road(self._road_id)
+        _notify(self._on_change, self._road_id)
+
+
 class MoveControlPoint:
     """Move one reference-line control point and re-bake the road geometry."""
 

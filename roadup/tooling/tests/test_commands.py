@@ -4,11 +4,14 @@ from __future__ import annotations
 import pytest
 
 from roadup.common.errors import ValidationError
+from roadup.common.types import RoadType
+from roadup.opendrive.model.network import OpenDriveModel
 from roadup.segments.lane_width import WidthLaw
 from roadup.tooling.commands import (
     AddControlPoint,
     CommandStack,
     ConnectSegments,
+    CreateRoad,
     MoveControlPoint,
     SetLaneCount,
     SetLaneMarking,
@@ -37,6 +40,32 @@ def test_command_stack_undo_redo() -> None:
     assert log == ["do", "undo"] and not stack.can_undo and stack.can_redo
     stack.redo()
     assert log == ["do", "undo", "do"]
+
+
+def test_create_road_builds_and_undoes() -> None:
+    model = OpenDriveModel()
+    seen: list[str] = []
+    cmd = CreateRoad(
+        model,
+        "road_001",
+        [(0.0, 0.0, 0.0), (30.0, 10.0, 0.0), (60.0, 0.0, 0.0)],
+        RoadType.LOCAL,
+        on_change=seen.append,
+    )
+    cmd.do()
+    assert seen == ["road_001"]
+    road = model.get_road("road_001")
+    assert road.geometry  # plan-view records baked
+    assert road.length > 0.0
+    assert road.user_data["splineKind"] == "catmullRom"
+    assert [cp["id"] for cp in road.user_data["controlPoints"]] == ["cp_001", "cp_002", "cp_003"]
+    cmd.undo()
+    assert "road_001" not in model.roads
+
+
+def test_create_road_needs_two_points() -> None:
+    with pytest.raises(ValidationError):
+        CreateRoad(OpenDriveModel(), "road_001", [(0.0, 0.0, 0.0)], RoadType.LOCAL)
 
 
 def test_move_control_point_rebakes_and_undoes(simple_model) -> None:
