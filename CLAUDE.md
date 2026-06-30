@@ -16,7 +16,7 @@ self-contained with co-located tests. Architecture is fixed first; the code is b
 | Path | What |
 |---|---|
 | `roadup/` | Pure-Python core: `common`, `geometry`, `opendrive/{model,io,eval}`, `network`, `segments`, `markings`, `intersections`, `usd`, `tooling`, `blender`. |
-| `app/exts/roadup.tool/` | Omniverse Kit extension (viewport input, `omni.ui.scene` manipulators, panels). The **only** place `omni.*` is imported. |
+| `../PurpleLight/` (sibling repo) | Omniverse Kit app **"Purple Light"** + the `roadup.*` extensions (master `roadup` → `roadup.core` + `roadup.viewport` + `roadup.ui`). The **only** place `omni.*`/`carb.*` is imported; it imports this pure-Python core. Not in this repo — see ARCHITECTURE.md §10. |
 | `tests/` | Integration tests + fixtures; **unit tests are co-located** in each `roadup/<pkg>/tests/`. |
 
 ## MCP servers — your domain experts (consult BEFORE answering from memory)
@@ -45,8 +45,9 @@ If a server's tools aren't loaded, fetch via ToolSearch (e.g. `select:mcp__usd-m
 - **Units: meters; Z-up.** `metersPerUnit = 1.0`, USD stage Z-up — matches OpenDRIVE (z up) and
   Omniverse. Road-local frame: **s** along the reference line, **t** lateral (+t = left), **z** up.
 - **Pure-Python core; adapters quarantine native deps.** `scenariogeneration`, `libOpenDRIVE`, `pxr`,
-  `bpy`, `omni.*` each appear in exactly **one** package, behind an interface. No upward imports
-  (core never imports `tooling`/`usd`/`app`; `tooling` never imports `omni.*`).
+  `bpy` each appear in exactly **one** package of this repo, behind an interface; `omni.*`/`carb.*`
+  live **only** in the sibling Purple Light repo. No upward imports (core never imports
+  `tooling`/`usd`; `tooling` never imports `omni.*`; nothing in this repo imports the Kit extensions).
 - **Editing intent → OpenDRIVE `<userData code="roadup">`** (spline control points, width laws,
   marking-preset ids) so a read → edit → write cycle round-trips losslessly.
 - **Generated USD prims carry `roadup:*` id tags** (`roadId`/`laneId`/`junctionId`/`controlPointId`)

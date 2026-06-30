@@ -359,15 +359,28 @@ us out of version-compat traps:
 The Kit App is the **only** UI. It is intentionally thin: it binds input and rendering to the
 headless Tooling layer and renders the Tooling layer's manipulator state.
 
-**Extension structure** (`app/exts/roadup.tool/`):
+**Where it lives (decision).** The Kit/omni code is **not** in this repo. It lives in a **separate
+sibling repo, "Purple Light"** (`../PurpleLight`), scaffolded from NVIDIA's `kit-app-template`
+(`kit_base_editor`, **Kit 110.1**). This keeps the RoadUp repo 100% pure-Python and quarantines all
+`omni.*`/`carb.*` to the Purple Light repo, while giving the full native Kit dev loop
+(`repo build`/`launch`/`test`/`package`, hot-reload). The pure-Python `roadup` core is *imported* by
+the extensions, not copied. See `../PurpleLight/source/extensions/`.
 
-- `extension.py` — `omni.ext.IExt` with `on_startup` / `on_shutdown`; wires the controller, viewport
-  input, manipulator view, and panels; declares dependencies in `extension.toml`.
-- `viewport_input.py` — subscribes to viewport **cursor movement, click, and drag**; performs
-  hit-tests and forwards normalized events to `tooling.RoadToolController`.
-- `manipulator_view.py` — uses **`omni.ui.scene`** to draw control points (node handles, spline
-  points) as an overlay manipulator, driven by the Tooling `ManipulatorModel`.
-- `panels.py` — `omni.ui` panels for lane count, marking presets, and road-type presets.
+**Extension structure** (in `PurpleLight/source/extensions/`) — a **master loader** that pulls in a
+shared-core extension plus toggleable feature extensions (not a mega-extension). Extension **ids**
+use the `roadup.*` namespace; their Python **module** names deliberately avoid `roadup`/`roadup.*`
+so they don't shadow the pure-Python core library `roadup`:
+
+| Extension id | Python module | Role |
+|---|---|---|
+| `roadup` | *(none — meta)* | master/loader; `[dependencies]` only — enabling it loads the stack |
+| `roadup.core` | `roadup_core` | shared session; locates + imports the `roadup` core (sibling-repo `sys.path` bootstrap), publishes a `RoadUpSession` (model, `RoadToolController`, command stack, `StageGenerator`). The feature exts depend on this. |
+| `roadup.viewport` | `roadup_viewport` | viewport **cursor move/click/drag** → hit-test → forward to `tooling.RoadToolController`; **`omni.ui.scene`** manipulator overlay driven by `ManipulatorModel`. Toggleable. |
+| `roadup.ui` | `roadup_ui` | `omni.ui` panels for lane count, marking presets, road-type presets. Toggleable. |
+
+`roadup.core` is a separate leaf (not folded into the master) because the master *loads* the
+features and so cannot also be *depended on* by them — the shared session therefore lives in a leaf
+both features depend on. This is what makes each feature independently toggleable.
 
 **Cursor / hover behavior (explicit requirement).**
 
@@ -381,19 +394,17 @@ headless Tooling layer and renders the Tooling layer's manipulator state.
   only the affected geometry is regenerated.
 
 **Why this split:** all interaction *logic* lives in `tooling/` and is tested without Omniverse.
-`omni.*` and `carb.*` imports appear only under `app/`. The app can be swapped or run headless in
-tests by driving `RoadToolController` directly. Interface sketches: [CODE_REFERENCE.md §11–§13](CODE_REFERENCE.md).
+`omni.*` and `carb.*` imports appear only in the Purple Light repo. The app can be swapped or run
+headless in tests by driving `RoadToolController` directly. Interface sketches:
+[CODE_REFERENCE.md §11–§13](CODE_REFERENCE.md).
 
-**Host app strategy (decision).** RoadUp owns the **extension** (`app/exts/roadup.tool/`), not a Kit
-*app*. The runnable app is a **thin host** generated **fresh** from NVIDIA's `kit-app-template`
-(`repo template new` → **`kit_base_editor`**, the minimal editor — it already pulls
-`omni.kit.manipulator.{prim,selection,camera}`, `omni.kit.viewport.window`, and the property/stage
-windows the tooling binds to), kept in a **separate sibling repo** — *not* vendored into RoadUp (its
-`repo`/premake/packman build machinery would muddy the pure-Python boundary) and *not* a copy of an
-older project's app shell (the template is versioned with the Kit SDK; regenerate so it matches the
-**Kit 110.1** target). The host adds `app/exts/` to its extension search path, makes the `roadup`
-core importable by Kit's Python (PYTHONPATH / `.pth`), and enables `roadup.tool`. This keeps the
-"core never depends on Kit" rule intact and lets the host be regenerated/upgraded independently.
+**Core import boundary.** The `kit_base_editor` host's `.kit` depends only on `roadup` (the master),
+whose extensions discover and import the pure-Python core. `roadup.core` resolves the RoadUp repo
+(setting `exts."roadup.core".roadupRepoPath` → `ROADUP_REPO` env → auto-discovery of a sibling
+`RoadUp/` folder by walking up from the extension location, which works for both the source and
+`_build/` trees) and prepends it to `sys.path` before the feature exts load. This keeps the "core
+never depends on Kit" rule intact and lets the host be regenerated/upgraded independently of the
+core. Alternative (not the default): `kit\python.bat -m pip install -e ../RoadUp`.
 
 ---
 
@@ -538,10 +549,11 @@ ruff                  # lint + format
 roadup/
   common/        geometry/      opendrive/{model,io,eval}/   network/
   segments/      markings/      intersections/               usd/
-  tooling/       blender/       app/exts/roadup.tool/
+  tooling/       blender/
 presets/         road_types.yaml   markings.yaml          # external, editable preset VALUES
 tests/
   integration/   fixtures/
+# Omniverse Kit app + extensions live in the sibling repo ../PurpleLight (see §10), not here.
 ARCHITECTURE.md  CODE_REFERENCE.md  pyproject.toml  README.md
 .claude/         skills/   settings.json                  # MCP-grounded skills + permissions
 .mcp.json                                                 # MCP server declarations

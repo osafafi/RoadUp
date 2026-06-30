@@ -1184,81 +1184,58 @@ class BlenderMeshProcessor:
 
 ---
 
-## 13. app (Omniverse Kit extension)
+## 13. Kit app (Omniverse extensions — sibling "Purple Light" repo)
 
-Thin binding of viewport input/rendering to Tooling. Lives under `app/exts/roadup.tool/`. The only
-place `omni.*` / `carb.*` are imported. Python module name: `roadup_tool` (kept distinct from the
-core `roadup` package to avoid path shadowing).
+Thin binding of viewport input/rendering to Tooling. **Lives in the sibling Purple Light repo**
+(`../PurpleLight/source/extensions/`), not in this repo — the only place `omni.*` / `carb.*` are
+imported. A **master loader** (`roadup`) pulls in a shared-core ext (`roadup.core`) and toggleable
+feature exts (`roadup.viewport`, `roadup.ui`). Extension **ids** are `roadup.*`; Python **module**
+names deliberately avoid `roadup`/`roadup.*` so they don't shadow the core library (`roadup_core`,
+`roadup_viewport`, `roadup_ui`). See ARCHITECTURE.md §10.
 
 ```toml
-# app/exts/roadup.tool/config/extension.toml
-[package]
-title = "RoadUp Tool"
-version = "0.1.0"
-description = "Procedural OpenDRIVE road authoring in the Omniverse viewport."
-
+# source/extensions/roadup/config/extension.toml   — master/loader (meta; no python.module)
 [dependencies]
-"omni.ui" = {}
-"omni.usd" = {}
-"omni.kit.viewport.utility" = {}
-"omni.ui.scene" = {}
-
-[[python.module]]
-name = "roadup_tool"
+"roadup.core" = {}
+"roadup.viewport" = {}
+"roadup.ui" = {}
 ```
 
 ```python
-# app/exts/roadup.tool/roadup_tool/extension.py
-import omni.ext
-
-class RoadUpToolExtension(omni.ext.IExt):
+# source/extensions/roadup.core/roadup_core/extension.py  (module: roadup_core)
+# Locates the RoadUp repo (setting roadupRepoPath -> ROADUP_REPO -> auto-discover sibling RoadUp/)
+# and prepends it to sys.path, then publishes a shared RoadUpSession the feature exts read.
+class RoadUpCoreExtension(omni.ext.IExt):
     def on_startup(self, ext_id: str) -> None:
-        # 1. Load/attach the OpenDriveModel; build the StageGenerator.
-        # 2. Create RoadToolController(model).
-        # 3. Wire ViewportInput -> controller; ManipulatorView <- controller.manipulators().
-        # 4. Register UI panels.
-        raise NotImplementedError
-    def on_shutdown(self) -> None:
-        raise NotImplementedError
+        repo = ensure_roadup_importable(get_extension_path(ext_id))  # _bootstrap.py
+        import roadup; from roadup.common.config import Config       # core now importable
+        set_session(RoadUpSession(repo_path=str(repo), config=Config()))  # session.py
+    def on_shutdown(self) -> None: set_session(None)
+
+# session.py: RoadUpSession holds {repo_path, config, model, controller, stage_generator};
+# get_session()/set_session() expose the process-wide singleton. Stage 6 fills model/controller/stage.
 ```
 
 ```python
-# app/exts/roadup.tool/roadup_tool/viewport_input.py
-class ViewportInput:
-    """Subscribe to cursor move / click / drag; hit-test; forward normalized events to the controller.
-    Hover hit-test resolves the prim under the cursor -> usd.mapping.resolve_prim -> {kind, id}."""
-    def __init__(self, controller, manipulator_view): ...
-    def _on_mouse_moved(self, x: float, y: float) -> None:
-        # hit = self._pick(x, y); model = controller.on_hover(hit); manipulator_view.sync(model)
-        ...
-    def _on_mouse_pressed(self, x: float, y: float, button: int, mods) -> None: ...
-    def _on_mouse_dragged(self, x: float, y: float, mods) -> None: ...
-    def _pick(self, x: float, y: float) -> dict | None: ...
+# source/extensions/roadup.viewport/roadup_viewport/  (module: roadup_viewport)
+# extension.py wires ViewportInput + ManipulatorView to roadup_core.get_session().
+class ViewportInput:        # viewport_input.py
+    """Stage 6: subscribe to cursor move/click/drag; hit-test -> usd.mapping.resolve_prim -> {kind,id};
+    forward to session.controller. start()/stop() wired; per-event handlers raise NotImplementedError."""
+class ManipulatorView:      # manipulator_view.py
+    """Stage 6: omni.ui.scene overlay drawing control-point handles from ManipulatorModel.
+    start()/stop() wired; rebuild() raises NotImplementedError."""
 ```
 
 ```python
-# app/exts/roadup.tool/roadup_tool/manipulator_view.py
-from omni.ui import scene as sc
-
-class ManipulatorView(sc.Manipulator):
-    """Draws control points (node handles, spline points) from the tooling ManipulatorModel.
-    Each handle is an sc.Arc/sc.Points with a HoverGesture (show on hover) and a DragGesture
-    (-> controller.on_drag). Visibility comes straight from ManipulatorModel.visible."""
-    def on_build(self) -> None: raise NotImplementedError
-    def sync(self, model) -> None:
-        """Update the drawn handles to match the tooling manipulator state, then invalidate()."""
-        ...
-```
-
-```python
-# app/exts/roadup.tool/roadup_tool/panels.py
-import omni.ui as ui
-
-class RoadUpPanel:
-    """omni.ui panel: road-type preset picker, lane-count steppers, marking-preset dropdowns.
-    Edits issue tooling Commands (SetLaneCount, SetLaneMarking, ...)."""
-    def __init__(self, controller): ...
-    def build(self) -> None: raise NotImplementedError
+# source/extensions/roadup.ui/roadup_ui/  (module: roadup_ui)
+# extension.py creates the dockable "RoadUp" ui.Window and builds RoadUpPanel.
+class RoadUpPanel:          # panels.py
+    """build() renders a status panel (core repo + OpenDRIVE version) proving the cross-repo load.
+    Stage 6: build_lane_controls/build_marking_controls/build_preset_controls issue tooling Commands
+    (SetLaneCount, SetLaneMarking, ...); currently raise NotImplementedError."""
+    def __init__(self, session): ...
+    def build(self) -> None: ...
 ```
 
 ---

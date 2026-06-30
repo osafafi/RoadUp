@@ -7,7 +7,7 @@ viewport.
 - **Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md) — responsibilities, boundaries, data flow, decisions.
 - **Interfaces / code sketches:** [CODE_REFERENCE.md](CODE_REFERENCE.md) — class/function signatures per module.
 
-> **Stage: 5 / 7 — USD output & headless tooling ✅** · see **[STATUS.md](STATUS.md)**
+> **Stage: 6 / 7 — Omniverse Kit app (environment set up 🚧) · core through Stage 5 ✅** · see **[STATUS.md](STATUS.md)**
 > for the exact, per-module build state. The pure-Python core through authoring and intersections is
 > implemented: draw a reference-line spline and **bake** it into a road (geometry + lanes + width
 > laws + marking presets), link roads (road↔lane link invariant), and **author junctions** —
@@ -20,7 +20,10 @@ viewport.
 > (centerline + lane edges) tagged with `roadup:*` ids at stable paths — built so a `*.scene.usda`
 > can **sublayer** the generated layer and author a scene beside it (two sources of truth, one-way
 > dependency). A headless **tooling** layer (controller, hover, undoable commands, `ROAD`/`SCENE` edit
-> context) drives edits with **no `omni.*`**. Phase 6 (Kit app) and Phase 7 (optional Blender) are stubs.
+> context) drives edits with **no `omni.*`**. **Stage 6 has begun:** the Omniverse Kit app (**"Purple
+> Light"**) and the `roadup.*` extensions are scaffolded in a **sibling repo** (`../PurpleLight`) — the
+> environment loads and imports this core; the viewport/panel interaction logic is the work in progress.
+> Phase 7 (optional Blender) is a stub.
 
 ## Layout
 
@@ -36,9 +39,12 @@ roadup/            core library (pure Python)
   usd/             generated USD viewport stage + prim<->id mapping + materials
   tooling/         headless interaction (controller, hover, manipulators, commands)
   blender/         optional, isolated headless Blender mesh adapter
-app/exts/roadup.tool/   Omniverse Kit extension (viewport input, manipulators, panels)
 tests/             integration tests + fixtures (unit tests are co-located per package)
 ```
+
+The Omniverse Kit app **"Purple Light"** and the `roadup.*` extensions (viewport input, manipulators,
+panels) live in a **separate sibling repo** (`../PurpleLight`), scaffolded from NVIDIA's
+`kit-app-template`; they import this pure-Python core. See [ARCHITECTURE.md](ARCHITECTURE.md) §10.
 
 ## Requirements
 
@@ -64,8 +70,10 @@ mypy roadup                                            # type-check
 python tools/gen_pxr_stubs.py                          # -> typings/ (gitignored); needs the `usd` extra
 ```
 
-The Omniverse extension is not pip-installed: add `app/exts/` to your Kit app's extension search
-path and enable **roadup.tool** (the `roadup` core library must be importable by Kit's Python).
+The Omniverse extensions live in the sibling **Purple Light** repo (`../PurpleLight`), not here.
+There, `repo build && repo launch` runs the app; its `roadup.core` extension locates this repo and
+makes the `roadup` core importable by Kit's Python (auto-discovers a sibling `RoadUp/` folder, or set
+`exts."roadup.core".roadupRepoPath` / the `ROADUP_REPO` env var). See ARCHITECTURE.md §10.
 
 ## Build order
 

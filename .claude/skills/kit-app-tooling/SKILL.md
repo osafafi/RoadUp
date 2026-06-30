@@ -1,13 +1,14 @@
 ---
 name: kit-app-tooling
-description: Build the RoadUp Omniverse Kit extension UI and interaction (app/exts/roadup.tool). Use when working on omni.ui panels (lane count, markings, presets), omni.ui.scene manipulators / control points for nodes and spline points, viewport cursor hover / click / drag, picking a prim back to its OpenDRIVE id, or binding any of it to the headless roadup.tooling controller. Consult ui-kit-mcp (omni.ui / omni.ui.scene) and kit-dev-mcp (extension scaffolding, viewport, input).
+description: Build the RoadUp Omniverse Kit extension UI and interaction (the roadup.* extensions in the sibling Purple Light repo, ../PurpleLight/source/extensions). Use when working on omni.ui panels (lane count, markings, presets), omni.ui.scene manipulators / control points for nodes and spline points, viewport cursor hover / click / drag, picking a prim back to its OpenDRIVE id, or binding any of it to the headless roadup.tooling controller. Consult ui-kit-mcp (omni.ui / omni.ui.scene) and kit-dev-mcp (extension scaffolding, viewport, input).
 ---
 
 # Kit App Tooling
 
 The Omniverse Kit App is RoadUp's **only** UI, and it is deliberately **thin**: it binds viewport
 input and rendering to the headless `roadup.tooling` controller and draws that controller's
-manipulator state. All `omni.*` / `carb.*` imports live **only** under `app/`. See
+manipulator state. It lives in the **sibling Purple Light repo** (`../PurpleLight`), the **only**
+place `omni.*` / `carb.*` are imported — it imports the pure-Python core from this repo. See
 [ARCHITECTURE.md §10](../../../ARCHITECTURE.md) and [CODE_REFERENCE.md §11, §13](../../../CODE_REFERENCE.md).
 
 ## Consult the MCP servers first
@@ -29,21 +30,25 @@ Fetch via ToolSearch if not loaded.
   the control-point set (`tooling.ManipulatorModel`), tool modes and undo (`tooling.controller`,
   `tooling.commands`). Unit-tested in `roadup/tooling/tests`.
 - **The app only:** subscribes to input, hit-tests, forwards normalized events, and renders the
-  manipulator model. No road logic in `app/`.
+  manipulator model. No road logic in the extensions.
 
-## The pieces (`app/exts/roadup.tool/roadup_tool/`)
+## The pieces (`../PurpleLight/source/extensions/`)
 
-- `extension.py` — `omni.ext.IExt` `on_startup`/`on_shutdown`; wires controller ↔ viewport input ↔
-  manipulator view ↔ panels. Declares deps + `[[python.module]] name = "roadup_tool"` in
-  `config/extension.toml`.
-- `viewport_input.py` — subscribes to **cursor move / click / drag**; `_pick(x,y)` hit-tests the
-  viewport and resolves the prim via `roadup.usd.mapping.resolve_prim` → `{kind, id, point}`; forwards
-  to `controller.on_hover/on_click/on_drag`.
-- `manipulator_view.py` — an `omni.ui.scene` `Manipulator` that draws control points (node handles,
-  spline points) from `ManipulatorModel.visible`; each handle is an `sc.Arc`/`sc.Points` with a
-  **hover gesture** (show on hover) and a **drag gesture** (→ `controller.on_drag`).
-- `panels.py` — `omni.ui` panels: road-type preset, lane-count steppers, marking-preset dropdowns;
-  edits issue tooling commands (`SetLaneCount`, `SetLaneMarking`, …).
+A master loader (`roadup`) pulls in a shared-core ext + two toggleable feature exts. Extension **ids**
+are `roadup.*`; Python **module** names avoid `roadup.*` to not shadow the core library.
+
+- `roadup` — master/loader; `config/extension.toml` lists the subs in `[dependencies]`, no python module.
+- `roadup.core` (module `roadup_core`) — `extension.py` locates + imports the pure-Python core
+  (`_bootstrap.py`: setting `roadupRepoPath` → `ROADUP_REPO` → auto-discover sibling `RoadUp/`) and
+  publishes a `RoadUpSession` (`session.py`: model, controller, command stack, stage). Features read it
+  via `roadup_core.get_session()`.
+- `roadup.viewport` (module `roadup_viewport`) — `viewport_input.py` subscribes to **cursor move /
+  click / drag**, hit-tests and resolves the prim via `roadup.usd.mapping.resolve_prim` →
+  `{kind, id, point}`, forwards to `controller.on_hover/on_click/on_drag`; `manipulator_view.py` is an
+  `omni.ui.scene` overlay drawing control-point handles from `ManipulatorModel` (`sc.Arc`/`sc.Points`
+  with hover + drag gestures).
+- `roadup.ui` (module `roadup_ui`) — `panels.py`: road-type preset, lane-count steppers, marking-preset
+  dropdowns; edits issue tooling commands (`SetLaneCount`, `SetLaneMarking`, …).
 
 ## The hover requirement (explicit)
 
@@ -62,6 +67,8 @@ point), after which only the affected geometry regenerates (see **usd-viewport**
 
 ## Setup notes
 
-The `roadup` core library must be importable by Kit's Python (pip-install into the Kit interpreter or
-add to `PYTHONPATH`); the extension module is `roadup_tool` (kept distinct from `roadup` to avoid path
-shadowing). Add `app/exts/` to the Kit app's extension search path and enable **roadup.tool**.
+Work in the sibling **Purple Light** repo: `repo build` then `repo launch -d`. The `roadup.core`
+extension makes the `roadup` core importable (auto-discovers a sibling `RoadUp/`, or set
+`exts."roadup.core".roadupRepoPath` / the `ROADUP_REPO` env var) — no manual `PYTHONPATH` needed.
+Extensions in `source/extensions/` are auto-built; the app `.kit` depends on the master `roadup`.
+Module names (`roadup_core`/`roadup_viewport`/`roadup_ui`) are kept off `roadup.*` to avoid shadowing.

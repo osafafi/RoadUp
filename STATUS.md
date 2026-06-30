@@ -1,7 +1,7 @@
 # RoadUp — Build Status
 
-> **Current stage: Stage 5 — USD output & headless tooling  ·  ✅ complete**
-> Last updated: 2026-06-28
+> **Current stage: Stage 6 — Omniverse Kit app  ·  🚧 environment set up** (core through Stage 5 ✅ complete)
+> Last updated: 2026-06-29
 
 **What works right now:** you can **author a junction** where several roads meet —
 `roadup.intersections.connectivity.ConnectivitySolver` seeds geometry-aware default movements
@@ -74,7 +74,7 @@ Legend: ✅ done · 🚧 in progress · ⬜ not started
 | **4. Intersections** | `intersections/{connectivity,connection_spline,junction_builder,surface}` ✅; writer/reader `<junction>` ✅ | ✅ |
 | **4.5 Elevation & adaptive mesh** | `opendrive/eval/elevation`, `segments/vertical_profile`, adaptive `planview`; writer/reader profiles ✅ | ✅ |
 | **5. Output & tooling** | `usd` ✅ (mapping/materials/stage + guide-curve Rails), `tooling` ✅ (controller/hover/manipulators/commands/preview + `ROAD`/`SCENE` seam) | ✅ |
-| **6. Omniverse app** | `app/exts/roadup.tool` | ⬜ |
+| **6. Omniverse app** | `../PurpleLight` (Kit host **"Purple Light"** + `roadup.*` exts) | 🚧 env scaffolded; interaction logic pending |
 | **7. Optional acceleration** | `blender` | ⬜ |
 
 ### Phase 1 — Core model & geometry ✅
@@ -233,22 +233,27 @@ integration tests `importorskip("pxr")`, so they run where USD is installed and 
 
 ---
 
-## Next stage (Stage 6 — Omniverse Kit app: `app/exts/roadup.tool`)
+## Current stage (Stage 6 — Omniverse Kit app: sibling **Purple Light** repo)
 
 The headless `usd` + `tooling` layers are done; Stage 6 is the **only** place `omni.*`/`carb.*` are
 imported. It binds the viewport to the controller and renders its state — no new authoring logic.
 
-**Host app (decided — ARCHITECTURE.md §10).** RoadUp ships the **extension**, not the app. Generate
-the runnable host **fresh** from `kit-app-template` (`repo template new` → **`kit_base_editor`**,
-Kit 110.1) in a **separate sibling repo** — don't vendor the template into this repo, don't reuse the
-old project's app shell. The host adds `app/exts/` to its ext search path, makes `roadup` importable
-by Kit's Python, and enables `roadup.tool`. Step 0 of this stage is creating that host.
+**Environment — done (ARCHITECTURE.md §10).** The Kit app and the `roadup.*` extensions live in a
+**separate sibling repo `../PurpleLight`**, scaffolded fresh from `kit-app-template`
+(`kit_base_editor`, Kit 110.1.2). App `purple_light.kit` (title "Purple Light") depends on the master
+`roadup`, which loads `roadup.core` (shared session; locates + imports this pure-Python core via a
+sibling-repo `sys.path` bootstrap) + the toggleable features `roadup.viewport` and `roadup.ui`. The
+status panel proves the cross-repo core load. Python module names (`roadup_core` / `roadup_viewport`
+/ `roadup_ui`) are kept off `roadup.*` to avoid shadowing the core library.
 
-1. `extension.py` — `omni.ext.IExt`: load/attach the `OpenDriveModel`, build `StageGenerator`, create
-   `RoadToolController(model, stage)`, wire input/render, register panels. Consult **kit-dev-mcp**.
-2. `viewport_input.py` — cursor move/click/drag → hit-test → `usd.mapping.resolve_prim` → forward to
-   the controller; render `controller.manipulators()` via `manipulator_view.py` (`omni.ui.scene`).
-3. `panels.py` — `omni.ui` panels (lane count, marking/road-type presets) issuing tooling commands;
+**Remaining (interaction logic — currently `NotImplementedError` skeletons in Purple Light):**
+
+1. `roadup.core` — populate the session: load/attach an `OpenDriveModel`, build `StageGenerator`,
+   create `RoadToolController(model, stage)`. Consult **kit-dev-mcp**.
+2. `roadup.viewport` — `viewport_input.py`: cursor move/click/drag → hit-test →
+   `usd.mapping.resolve_prim` → forward to the controller; `manipulator_view.py`: render
+   `controller.manipulators()` via `omni.ui.scene`.
+3. `roadup.ui` — `panels.py`: lane count, marking/road-type preset controls issuing tooling commands;
    add the **ROAD / SCENE toggle** that drives `controller.set_context`. Consult **ui-kit-mcp**.
 
 Then the **scene-authoring** stage builds the scatter/array tools that ride the guide-curve Rails
